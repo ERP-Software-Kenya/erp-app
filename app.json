@@ -2,12 +2,14 @@
   "expo": {
     "name": "erp-app",
     "slug": "erp-app",
+    "scheme": "erpapp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.erp.erpapp"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,10 +18,33 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.erp.erpapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-status-bar",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Allow ERP to access your location for delivery tracking.",
+          "locationAlwaysPermission": "Allow ERP to access your location in the background for delivery tracking.",
+          "locationWhenInUsePermission": "Allow ERP to access your location while using the app.",
+          "isIosBackgroundLocationEnabled": true,
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#3b74f5",
+          "sounds": []
+        }
+      ]
+    ]
   }
 }
