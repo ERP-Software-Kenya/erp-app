@@ -1,8 +1,6 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
-import { MMKV } from 'react-native-mmkv';
 import { router } from 'expo-router';
-
-const authStorage = new MMKV({ id: 'erp-auth' });
+import { authStorage } from './auth-storage';
 
 export const apiClient = axios.create({
   baseURL: process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3000',
