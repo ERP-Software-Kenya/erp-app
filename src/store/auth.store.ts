@@ -23,7 +23,7 @@ export interface AuthState {
   hydrate: () => void;
 }
 
-function parseJwtPayload(token: string): JwtPayload | null {
+export function parseJwtPayload(token: string): JwtPayload | null {
   try {
     const base64 = token.split('.')[1];
     if (!base64) return null;
@@ -32,6 +32,10 @@ function parseJwtPayload(token: string): JwtPayload | null {
   } catch {
     return null;
   }
+}
+
+function isTokenExpired(decoded: JwtPayload): boolean {
+  return decoded.exp * 1000 < Date.now();
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -67,7 +71,11 @@ export const useAuthStore = create<AuthState>((set) => ({
     const token = authStorage.getString('jwt');
     if (!token) return;
     const decoded = parseJwtPayload(token);
-    if (!decoded) return;
+    if (!decoded || isTokenExpired(decoded)) {
+      authStorage.delete('jwt');
+      authStorage.set('session-expired', '1');
+      return;
+    }
     set({
       token,
       userId: decoded.sub,

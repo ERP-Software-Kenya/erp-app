@@ -22,6 +22,7 @@ apiClient.interceptors.response.use(
   (error: AxiosError) => {
     if (error.response?.status === 401) {
       authStorage.delete('jwt');
+      authStorage.set('session-expired', '1');
       router.replace('/(auth)/login');
     }
     return Promise.reject(error);

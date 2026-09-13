@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,19 +12,8 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { loginApi } from '../../src/api/auth.api';
-import { useAuthStore } from '../../src/store/auth.store';
-import type { JwtPayload } from '../../src/store/auth.store';
-
-function parseJwtPayload(token: string): JwtPayload | null {
-  try {
-    const base64 = token.split('.')[1];
-    if (!base64) return null;
-    const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(json) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
+import { useAuthStore, parseJwtPayload } from '../../src/store/auth.store';
+import { authStorage } from '../../src/api/client';
 
 export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
@@ -32,6 +21,13 @@ export default function LoginScreen(): React.ReactElement {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (authStorage.getString('session-expired')) {
+      authStorage.delete('session-expired');
+      Alert.alert('Session Expired', 'Your session has expired. Please sign in again.');
+    }
+  }, []);
 
   const handleLogin = async (): Promise<void> => {
     if (!email.trim() || !password) {
