@@ -25,7 +25,6 @@ jobs:
       AWS_DEFAULT_REGION: ${{ vars.B2_REGION }}
       B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
       B2_BUCKET: ${{ vars.B2_BUCKET }}
-      B2_PUBLIC_BASE_URL: ${{ vars.B2_PUBLIC_BASE_URL }}
       RELEASE_KEY_PREFIX: releases/mobile/android/stable
 
     steps:
@@ -42,7 +41,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          required=(EXPO_TOKEN AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION B2_ENDPOINT B2_BUCKET B2_PUBLIC_BASE_URL)
+          required=(EXPO_TOKEN AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION B2_ENDPOINT B2_BUCKET)
           for name in "${required[@]}"; do
             if [ -z "${!name:-}" ]; then
               echo "Missing required GitHub secret or variable: $name" >&2
@@ -50,7 +49,6 @@ jobs:
             fi
           done
           case "$B2_ENDPOINT" in https://*) ;; *) echo "B2_ENDPOINT must use HTTPS" >&2; exit 1 ;; esac
-          case "$B2_PUBLIC_BASE_URL" in https://*) ;; *) echo "B2_PUBLIC_BASE_URL must use HTTPS" >&2; exit 1 ;; esac
 
       - name: Install dependencies
         run: npm ci
@@ -109,4 +107,4 @@ jobs:
         shell: bash
         run: |
           echo "## Android release published" >> "$GITHUB_STEP_SUMMARY"
-          node -e "const r=JSON.parse(require('fs').readFileSync(process.env.RELEASE_METADATA_PATH)); console.log('- Version: '+r.version+' ('+r.buildNumber+')\n- SHA-256: '+r.sha256+'\n- Download: '+r.downloadUrl)" >> "$GITHUB_STEP_SUMMARY"
+          node -e "const r=JSON.parse(require('fs').readFileSync(process.env.RELEASE_METADATA_PATH)); console.log('- Version: '+r.version+' ('+r.buildNumber+')\n- SHA-256: '+r.sha256+'\n- Private object: '+r.artifactKey)" >> "$GITHUB_STEP_SUMMARY"

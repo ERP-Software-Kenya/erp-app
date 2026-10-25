@@ -12,7 +12,6 @@ const requiredEnv = (name) => {
 const buildJsonPath = requiredEnv('BUILD_JSON_PATH');
 const apkPath = requiredEnv('APK_PATH');
 const metadataPath = requiredEnv('RELEASE_METADATA_PATH');
-const publicBaseUrl = requiredEnv('B2_PUBLIC_BASE_URL').replace(/\/$/, '');
 const keyPrefix = requiredEnv('RELEASE_KEY_PREFIX').replace(/^\/+|\/+$/g, '');
 
 const parsed = JSON.parse(readFileSync(buildJsonPath, 'utf8'));
@@ -40,7 +39,7 @@ await new Promise((resolve, reject) => {
 
 const version = String(build.appVersion ?? '1.0.0');
 const buildNumber = String(build.appBuildVersion ?? build.id ?? process.env.GITHUB_RUN_NUMBER ?? '1');
-const downloadUrl = `${publicBaseUrl}/${keyPrefix}/latest/erp-app.apk`;
+const artifactKey = `${keyPrefix}/latest/erp-app.apk`;
 
 const metadata = {
   application: 'erp-app',
@@ -51,7 +50,7 @@ const metadata = {
   sizeBytes: statSync(apkPath).size,
   sha256: hash.digest('hex'),
   publishedAt: new Date().toISOString(),
-  downloadUrl,
+  artifactKey,
   gitCommit: process.env.GITHUB_SHA ?? null,
   easBuildId: build.id ?? null,
 };

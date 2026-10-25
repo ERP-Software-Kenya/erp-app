@@ -1,6 +1,6 @@
 # Android Release Setup
 
-This runbook configures `erp-app` so every successful push or merge to `main` builds a signed APK with EAS and publishes it to Backblaze B2. Web-ERP reads the generated `latest.json` manifest and displays the newest build without a new Web-ERP deployment.
+This runbook configures `erp-app` so every successful push or merge to `main` builds a signed APK with EAS and publishes it to a private Backblaze B2 bucket. Authenticated Web-ERP users retrieve release metadata and a short-lived download URL through Core APIs.
 
 ## Release output
 
@@ -17,16 +17,11 @@ The versioned APK is immutable. The `latest` APK and manifest are refreshed afte
 ## 1. Prepare Backblaze B2
 
 1. Create a dedicated bucket such as `erp-mobile-releases`.
-2. Enable public reads for this release bucket because Web-ERP offers direct installation to anyone with the URL.
+2. Keep the bucket private.
 3. Create an application key restricted to this bucket with write access.
 4. Copy the bucket's S3-compatible endpoint and region.
-5. Confirm the public file root. Backblaze commonly uses this format:
 
-   ```text
-   https://f000.backblazeb2.com/file/<bucket-name>
-   ```
-
-Do not reuse a broadly privileged account key. Do not put the B2 key or secret in the app, Web-ERP, or any `EXPO_PUBLIC_*`/`VITE_*` value.
+Do not reuse a broadly privileged account key. Do not put the B2 key or secret in the app, Web-ERP, or any `EXPO_PUBLIC_*`/`VITE_*` value. GitHub Actions needs a bucket-scoped write key; Core APIs should use a separate bucket-scoped read key.
 
 ## 2. Link and configure EAS once
 
@@ -89,21 +84,37 @@ Add repository variables:
 | `B2_ENDPOINT` | `https://s3.us-west-004.backblazeb2.com` |
 | `B2_REGION` | `us-west-004` |
 | `B2_BUCKET` | `erp-mobile-releases` |
-| `B2_PUBLIC_BASE_URL` | `https://f000.backblazeb2.com/file/erp-mobile-releases` |
 
-Do not add a trailing slash to `B2_PUBLIC_BASE_URL`.
+## 5. Configure Core APIs
 
-## 5. Configure Web-ERP once
-
-Set this value in the production Web-ERP deployment:
+Add the following production values to Core APIs using a read-only Backblaze application key:
 
 ```env
-VITE_ANDROID_RELEASE_MANIFEST_URL=https://f000.backblazeb2.com/file/<bucket-name>/releases/mobile/android/stable/latest.json
+MOBILE_RELEASES_ENABLED=true
+MOBILE_RELEASE_STORAGE_ENDPOINT=https://s3.<region>.backblazeb2.com
+MOBILE_RELEASE_STORAGE_REGION=<region>
+MOBILE_RELEASE_STORAGE_ACCESS_KEY_ID=<read-only-key-id>
+MOBILE_RELEASE_STORAGE_SECRET_ACCESS_KEY=<read-only-application-key>
+MOBILE_RELEASE_STORAGE_BUCKET=<bucket-name>
+MOBILE_RELEASE_STORAGE_KEY_PREFIX=releases/mobile/android/stable
+MOBILE_RELEASE_DOWNLOAD_URL_EXPIRY_SECONDS=300
 ```
 
-Rebuild and deploy Web-ERP once after setting it. Future Android releases are discovered from the manifest at runtime and do not require rebuilding Web-ERP.
+Core APIs exposes authenticated metadata and download endpoints. Ensure the Web-ERP production origin is present in `CLERK_AUTHORIZED_PARTIES` so browser requests pass CORS and Clerk JWT validation.
 
-## 6. Create a release
+## 6. Configure Web-ERP
+
+Web-ERP only needs its existing production API and Clerk configuration:
+
+```env
+VITE_API_BASE_URL=https://<core-api-domain>
+VITE_CLERK_PUBLISHABLE_KEY=<clerk-publishable-key>
+VITE_MOBILE_RELEASE_CHANNEL=stable
+```
+
+It must not receive a Backblaze URL or credential. Users sign in before Core APIs returns a five-minute signed download URL.
+
+## 7. Create a release
 
 Update the user-facing version in `app.json` when releasing a new semantic version:
 
@@ -126,19 +137,15 @@ Merge the approved change into `main`. The **Release Android app** GitHub Action
 
 The workflow can also be started from **Actions → Release Android app → Run workflow**.
 
-## 7. Verify the first release
-
-Check the GitHub Actions summary, then verify:
-
-```text
-<B2_PUBLIC_BASE_URL>/releases/mobile/android/stable/latest.json
-<B2_PUBLIC_BASE_URL>/releases/mobile/android/stable/latest/erp-app.apk
-```
+## 8. Verify the first release
 
 Confirm that:
 
-- `latest.json` shows the expected version, build number, commit, file size, and SHA-256;
+- the workflow uploads `latest.json` and `latest/erp-app.apk` to the private bucket;
+- opening either Backblaze object URL without authentication is denied;
 - the Web-ERP `/downloads` page shows the same metadata;
+- signing out removes access to metadata and APK download;
+- clicking download while signed in returns a temporary Backblaze URL;
 - the APK installs on a clean Android device;
 - a later build installs over the previous build without removing app data;
 - Clerk login, warehouse workflows, driver tracking, and offline queue synchronization work on a physical device.
@@ -161,9 +168,9 @@ npx eas build --platform android --profile release-apk
 
 Verify that the application key is restricted to the correct bucket but has object write permission, and that `B2_ENDPOINT` and `B2_REGION` exactly match the bucket details.
 
-### APK downloads but Web-ERP shows the fallback
+### Web-ERP shows the release fallback
 
-Open `latest.json` directly, verify that the bucket permits public reads, and confirm the exact `VITE_ANDROID_RELEASE_MANIFEST_URL` in the deployed Web-ERP build.
+Verify Core APIs release configuration, confirm `MOBILE_RELEASES_ENABLED=true`, and check that its read-only Backblaze key can read `releases/mobile/android/stable/latest.json`.
 
 ### Users cannot update the installed app
 
