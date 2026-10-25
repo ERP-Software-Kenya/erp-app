@@ -126,7 +126,6 @@ export default function PackingScreen(): React.ReactElement {
           data={order?.items ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.orderItemId}
-          estimatedItemSize={64}
           contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         />
       )}

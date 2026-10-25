@@ -1,17 +1,28 @@
 import { apiClient } from './client';
+import type { AuthProfile } from '../store/auth.store';
 
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface DeviceSessionRequest {
+  deviceId: string;
+  deviceName: string;
+  platform: string;
+  appVersion?: string;
 }
 
-export interface LoginResponse {
-  token: string;
+export async function syncUserApi(): Promise<void> {
+  await apiClient.post('/v1/auth/sync');
 }
 
-export async function loginApi(credentials: LoginRequest): Promise<LoginResponse> {
-  const response = await apiClient.post<LoginResponse>('/v1/auth/login', credentials);
+export async function getMeApi(): Promise<AuthProfile> {
+  const response = await apiClient.get<AuthProfile>('/v1/auth/me');
   return response.data;
+}
+
+export async function upsertDeviceSessionApi(device: DeviceSessionRequest): Promise<void> {
+  await apiClient.post('/v1/auth/sessions', device);
+}
+
+export async function endCurrentSessionApi(): Promise<void> {
+  await apiClient.post('/v1/auth/sessions/current/end');
 }
 
 export async function registerDeviceTokenApi(expoPushToken: string): Promise<void> {

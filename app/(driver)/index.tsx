@@ -12,7 +12,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTodayTrips, useUpdateTripStatus } from '../../src/hooks/useTrips';
 import { OfflineBanner } from '../../src/components/OfflineBanner';
-import { startGpsTask } from './_layout';
+import { startGpsTask, stopGpsTask } from './_layout';
 import type { Trip } from '../../src/api/trips.api';
 
 interface TripCardProps {
@@ -80,10 +80,15 @@ export default function DriverIndexScreen(): React.ReactElement {
     async (tripId: string): Promise<void> => {
       setStartingId(tripId);
       try {
+        const trackingStarted = await startGpsTask(tripId);
+        if (!trackingStarted) {
+          Alert.alert('Location required', 'Background location permission is required to start a delivery trip.');
+          return;
+        }
         await updateStatus.mutateAsync({ tripId, status: 'in_transit' });
-        await startGpsTask(tripId);
         router.push(`/(driver)/${tripId}`);
       } catch {
+        await stopGpsTask();
         Alert.alert('Error', 'Could not start trip. Try again.');
       } finally {
         setStartingId(null);
@@ -122,7 +127,6 @@ export default function DriverIndexScreen(): React.ReactElement {
           data={trips ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          estimatedItemSize={180}
           ListEmptyComponent={<EmptyTrips />}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
