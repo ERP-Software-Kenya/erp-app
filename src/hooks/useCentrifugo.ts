@@ -6,11 +6,11 @@ import { useAuthStore } from '../store/auth.store';
 
 export function useCentrifugo(): void {
   const queryClient = useQueryClient();
-  const { userId, organizationId, locationId, role, token } = useAuthStore();
+  const { userId, organizationId, locationIds, role, isReady } = useAuthStore();
   const centrifugeRef = useRef<Centrifuge | null>(null);
 
   useEffect(() => {
-    if (!token || !userId || !organizationId) return;
+    if (!isReady || !userId || !organizationId) return;
 
     const centrifugoUrl =
       process.env.EXPO_PUBLIC_CENTRIFUGO_URL ??
@@ -37,15 +37,17 @@ export function useCentrifugo(): void {
     const orgSub = client.newSubscription(`org_${organizationId}`);
     orgSub.subscribe();
 
-    if (role === 'PICKER' && locationId) {
-      const locationSub = client.newSubscription(`location_${locationId}`);
-      locationSub.on('publication', (ctx) => {
-        const event = ctx.data as { type?: string };
-        if (event.type === 'order:new') {
-          void queryClient.invalidateQueries({ queryKey: ['orders', 'queue'] });
-        }
-      });
-      locationSub.subscribe();
+    if (role === 'packer') {
+      for (const locationId of locationIds) {
+        const locationSub = client.newSubscription(`location_${locationId}`);
+        locationSub.on('publication', (ctx) => {
+          const event = ctx.data as { type?: string };
+          if (event.type === 'order:new') {
+            void queryClient.invalidateQueries({ queryKey: ['orders', 'queue'] });
+          }
+        });
+        locationSub.subscribe();
+      }
     }
 
     client.connect();
@@ -53,5 +55,5 @@ export function useCentrifugo(): void {
     return () => {
       client.disconnect();
     };
-  }, [token, userId, organizationId, locationId, role, queryClient]);
+  }, [isReady, userId, organizationId, locationIds, role, queryClient]);
 }

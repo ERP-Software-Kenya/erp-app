@@ -2,57 +2,29 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { loginApi } from '../../src/api/auth.api';
-import { useAuthStore } from '../../src/store/auth.store';
-import type { JwtPayload } from '../../src/store/auth.store';
-
-function parseJwtPayload(token: string): JwtPayload | null {
-  try {
-    const base64 = token.split('.')[1];
-    if (!base64) return null;
-    const json = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
-    return JSON.parse(json) as JwtPayload;
-  } catch {
-    return null;
-  }
-}
+import * as Linking from 'expo-linking';
+import { useHostedAuth } from '@clerk/expo/hosted-auth';
 
 export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { setAuth } = useAuthStore();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const { startHostedAuth } = useHostedAuth();
   const [loading, setLoading] = useState(false);
 
   const handleLogin = async (): Promise<void> => {
-    if (!email.trim() || !password) {
-      Alert.alert('Missing fields', 'Please enter email and password.');
-      return;
-    }
-
     setLoading(true);
     try {
-      const { token } = await loginApi({ email: email.trim(), password });
-      const decoded = parseJwtPayload(token);
-      if (!decoded) {
-        Alert.alert('Error', 'Invalid token received.');
-        return;
-      }
-      setAuth(token, decoded);
-      if (decoded.role === 'PICKER') {
-        router.replace('/(picker)');
-      } else {
-        router.replace('/(driver)');
-      }
+      const result = await startHostedAuth({
+        mode: 'sign-in',
+        redirectUrl: Linking.createURL('auth-callback', { scheme: 'erpapp' }),
+      });
+      if (!result.createdSessionId) return;
+      router.replace('/');
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Wrong credentials or network error.';
@@ -72,10 +44,7 @@ export default function LoginScreen(): React.ReactElement {
       <View className="absolute top-24 right-[-40] w-48 h-48 rounded-full bg-cyan opacity-15" />
       <View className="absolute bottom-[-60] right-[-30] w-56 h-56 rounded-full bg-primary-dark opacity-25" />
 
-      <KeyboardAvoidingView
-        className="flex-1 justify-center px-8"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+      <View className="flex-1 justify-center px-8">
         {/* Logo */}
         <View className="items-center mb-12">
           <Text className="text-4xl font-bold text-white tracking-tight">ERP Field</Text>
@@ -86,25 +55,9 @@ export default function LoginScreen(): React.ReactElement {
 
         {/* Card */}
         <View className="rounded-3xl overflow-hidden border border-white/10 bg-white/10 p-6 gap-4">
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email"
-            placeholderTextColor="#94a3b8"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoComplete="email"
-            className="bg-white/10 rounded-xl px-4 h-12 text-white text-base border border-white/20"
-          />
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Password"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            autoComplete="password"
-            className="bg-white/10 rounded-xl px-4 h-12 text-white text-base border border-white/20"
-          />
+          <Text className="text-slate-200 text-center text-sm">
+            Continue with secure Clerk authentication. Verification, MFA, and password recovery are handled automatically.
+          </Text>
           <TouchableOpacity
             className={[
               'rounded-xl h-12 items-center justify-center mt-2',
@@ -117,11 +70,11 @@ export default function LoginScreen(): React.ReactElement {
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text className="text-white font-bold text-base">Sign In</Text>
+              <Text className="text-white font-bold text-base">Continue to Sign In</Text>
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }

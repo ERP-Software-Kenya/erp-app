@@ -4,12 +4,12 @@ import * as TaskManager from 'expo-task-manager';
 import * as Location from 'expo-location';
 import { useCentrifugo } from '../../src/hooks/useCentrifugo';
 import { useQueueStore } from '../../src/store/queue.store';
-import { useAuthStore } from '../../src/store/auth.store';
+import { clearActiveTripId, getActiveTripId, setActiveTripId } from '../../src/store/active-trip';
 
 export const GPS_TASK = 'GPS_UPDATE_TASK';
 
 // Define task outside component so it is registered once at module load
-TaskManager.defineTask(GPS_TASK, ({ data, error }) => {
+TaskManager.defineTask(GPS_TASK, async ({ data, error }) => {
   if (error) return;
   if (!data) return;
   const { locations } = data as { locations: Location.LocationObject[] };
@@ -18,14 +18,14 @@ TaskManager.defineTask(GPS_TASK, ({ data, error }) => {
 
   // Access queue store directly (Zustand allows this outside React)
   const { enqueue } = useQueueStore.getState();
-  const { userId } = useAuthStore.getState();
-  if (!userId) return;
+  const tripId = getActiveTripId();
+  if (!tripId) return;
 
   enqueue('gps', {
+    tripId,
     latitude: loc.coords.latitude,
     longitude: loc.coords.longitude,
     accuracy: loc.coords.accuracy ?? 0,
-    userId,
   });
 });
 
@@ -49,11 +49,14 @@ function DriverLayoutContent(): React.ReactElement {
   );
 }
 
-export async function startGpsTask(tripId: string): Promise<void> {
-  const { status } = await Location.requestBackgroundPermissionsAsync();
-  if (status !== 'granted') return;
+export async function startGpsTask(tripId: string): Promise<boolean> {
+  const foreground = await Location.requestForegroundPermissionsAsync();
+  if (foreground.status !== 'granted') return false;
+  const background = await Location.requestBackgroundPermissionsAsync();
+  if (background.status !== 'granted') return false;
+  setActiveTripId(tripId);
   const isRunning = await Location.hasStartedLocationUpdatesAsync(GPS_TASK);
-  if (isRunning) return;
+  if (isRunning) return true;
   await Location.startLocationUpdatesAsync(GPS_TASK, {
     accuracy: Location.Accuracy.High,
     timeInterval: 10_000,
@@ -65,12 +68,13 @@ export async function startGpsTask(tripId: string): Promise<void> {
       notificationColor: '#3b74f5',
     },
   });
+  return true;
 }
 
 export async function stopGpsTask(): Promise<void> {
   const isRunning = await Location.hasStartedLocationUpdatesAsync(GPS_TASK);
-  if (!isRunning) return;
-  await Location.stopLocationUpdatesAsync(GPS_TASK);
+  if (isRunning) await Location.stopLocationUpdatesAsync(GPS_TASK);
+  clearActiveTripId();
 }
 
 export default function DriverLayout(): React.ReactElement {
