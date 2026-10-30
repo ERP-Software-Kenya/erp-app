@@ -1,6 +1,6 @@
 import '../global.css';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useSegments } from 'expo-router';
 import { ClerkProvider, useAuth, useClerk } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import NetInfo from '@react-native-community/netinfo';
@@ -21,6 +21,7 @@ import { configureApiAuth } from '../src/api/client';
 import { getDeviceSession } from '../src/auth/device-session';
 import { useQueueStore } from '../src/store/queue.store';
 import { clearActiveTripId } from '../src/store/active-trip';
+import { getPendingInvitationToken } from '../src/auth/pending-invitation';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,6 +44,8 @@ Notifications.setNotificationHandler({
 });
 
 function RootNavigator(): React.ReactElement {
+  const segments = useSegments();
+  const isInviteRoute = (segments as readonly string[]).includes('invite');
   const { isLoaded, isSignedIn, getToken } = useAuth();
   const { signOut } = useClerk();
   const { isReady, role, setProfile, markReady, clearAuth } = useAuthStore();
@@ -88,12 +91,23 @@ function RootNavigator(): React.ReactElement {
   }), [getToken, clearAuth, signOut]);
 
   useEffect(() => {
+    if (!isLoaded || isInviteRoute) return;
+    void getPendingInvitationToken().then((token) => {
+      if (token) router.replace(`/(auth)/invite/${encodeURIComponent(token)}` as never);
+    });
+  }, [isLoaded, isInviteRoute]);
+
+  useEffect(() => {
     if (!isLoaded) return;
+    if (isInviteRoute) {
+      markReady();
+      return;
+    }
     void bootstrap().catch((error: unknown) => {
       markReady();
       setBootstrapError(error instanceof Error ? error.message : 'Unable to load your account.');
     });
-  }, [isLoaded, bootstrap, markReady]);
+  }, [isLoaded, isInviteRoute, bootstrap, markReady]);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -120,6 +134,7 @@ function RootNavigator(): React.ReactElement {
 
   useEffect(() => {
     if (!isLoaded || !isReady || bootstrapError) return;
+    if (isInviteRoute) return;
     if (!isSignedIn) {
       router.replace('/(auth)/login');
       return;
@@ -131,7 +146,7 @@ function RootNavigator(): React.ReactElement {
     } else {
       router.replace('/(auth)/login');
     }
-  }, [isLoaded, isReady, isSignedIn, role, bootstrapError]);
+  }, [isLoaded, isReady, isSignedIn, role, bootstrapError, isInviteRoute]);
 
   if (!isLoaded || !isReady) {
     return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" /></View>;
