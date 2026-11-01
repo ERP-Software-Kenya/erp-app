@@ -19,6 +19,10 @@ function clerkMsg(error: unknown, fallback: string): string {
   return (error as Error)?.message || fallback;
 }
 
+function clerkCode(error: unknown): string {
+  return (error as { errors?: { code?: string }[] })?.errors?.[0]?.code ?? '';
+}
+
 export default function SignUpScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { signUp, fetchStatus } = useSignUp();
@@ -41,18 +45,31 @@ export default function SignUpScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[SignUp/pw] create() email=', email.trim());
       const { error: createError } = await signUp.create({ emailAddress: email.trim(), password });
+      console.log('[SignUp/pw] create() status=', signUp.status, 'error=', JSON.stringify(createError));
       if (createError) {
+        const code = clerkCode(createError);
+        console.log('[SignUp/pw] create error code=', code);
+        if (code === 'form_identifier_exists' || code === 'form_identifier_taken' || code.includes('exists')) {
+          Alert.alert('Account exists', 'An account with this email already exists. Please sign in instead.', [
+            { text: 'Sign In', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
         Alert.alert('Sign up failed', clerkMsg(createError, 'Please check your details.'));
         return;
       }
+      console.log('[SignUp/pw] sending email code');
       const { error: emailError } = await signUp.verifications.sendEmailCode();
+      console.log('[SignUp/pw] sendEmailCode done, error=', JSON.stringify(emailError));
       if (emailError) {
         Alert.alert('Sign up failed', clerkMsg(emailError, 'Could not send verification code.'));
         return;
       }
       router.push('/(auth)/verify-email');
     } catch (err) {
+      console.log('[SignUp/pw] caught=', err);
       Alert.alert('Sign up failed', clerkMsg(err, 'Please check your details.'));
     } finally {
       setLoading(false);
@@ -63,18 +80,31 @@ export default function SignUpScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[SignUp/otp] create() email=', email.trim());
       const { error: createError } = await signUp.create({ emailAddress: email.trim() });
+      console.log('[SignUp/otp] create() status=', signUp.status, 'error=', JSON.stringify(createError));
       if (createError) {
+        const code = clerkCode(createError);
+        console.log('[SignUp/otp] create error code=', code);
+        if (code === 'form_identifier_exists' || code === 'form_identifier_taken' || code.includes('exists')) {
+          Alert.alert('Account exists', 'An account with this email already exists. Please sign in instead.', [
+            { text: 'Sign In', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
         Alert.alert('Sign up failed', clerkMsg(createError, 'Please try again.'));
         return;
       }
+      console.log('[SignUp/otp] sending email code');
       const { error: emailError } = await signUp.verifications.sendEmailCode();
+      console.log('[SignUp/otp] sendEmailCode done, error=', JSON.stringify(emailError));
       if (emailError) {
         Alert.alert('Sign up failed', clerkMsg(emailError, 'Could not send verification code.'));
         return;
       }
       setOtpStage('verify');
     } catch (err) {
+      console.log('[SignUp/otp] caught=', err);
       Alert.alert('Sign up failed', clerkMsg(err, 'Please try again.'));
     } finally {
       setLoading(false);
@@ -85,18 +115,40 @@ export default function SignUpScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[SignUp/otp] verifyEmailCode() signUp.status=', signUp.status);
       const { error } = await signUp.verifications.verifyEmailCode({ code: otpCode.trim() });
+      console.log('[SignUp/otp] verifyEmailCode() done, signUp.status=', signUp.status, 'error=', JSON.stringify(error));
       if (error) {
+        const code = clerkCode(error);
+        console.log('[SignUp/otp] verify error code=', code);
+        if (code.includes('already') || code.includes('verified')) {
+          Alert.alert('Already verified', 'Your email is already verified. Please sign in.', [
+            { text: 'Sign In', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
         Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
         return;
       }
       if (signUp.status === 'complete') {
+        console.log('[SignUp/otp] complete, finalizing');
         await signUp.finalize();
         router.replace('/');
+      } else if (signUp.status === 'missing_requirements') {
+        // Instance requires a password — OTP-only sign-up is not supported
+        const missing = signUp.missingFields?.join(', ') ?? 'a password';
+        console.log('[SignUp/otp] missing_requirements, missingFields=', signUp.missingFields);
+        Alert.alert(
+          'Password required',
+          `This account requires ${missing} to complete sign-up. Please use the Password tab instead.`,
+          [{ text: 'Use Password', onPress: () => switchTab('password') }],
+        );
       } else {
-        Alert.alert('Verification failed', 'Could not complete sign-up. Please try again.');
+        console.log('[SignUp/otp] unexpected status=', signUp.status);
+        Alert.alert('Sign up incomplete', `Status: ${signUp.status}. Please contact support.`);
       }
     } catch (err) {
+      console.log('[SignUp/otp] caught=', err);
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));
     } finally {
       setLoading(false);
