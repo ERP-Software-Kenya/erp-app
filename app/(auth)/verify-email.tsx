@@ -14,18 +14,22 @@ function clerkMsg(error: unknown, fallback: string): string {
 
 export default function VerifyEmailScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signUp, setActive, isLoaded } = useSignUp();
+  const { signUp, fetchStatus } = useSignUp();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
 
   const handleVerify = async () => {
-    if (!isLoaded || !signUp) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code: code.trim() });
-      if (result.status === 'complete' && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
+      const { error } = await signUp.verifications.verifyEmailCode({ code: code.trim() });
+      if (error) {
+        Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
+        return;
+      }
+      if (signUp.status === 'complete') {
+        await signUp.finalize();
         router.replace('/');
       } else {
         Alert.alert('Not done', 'Additional steps are required. Please contact your administrator.');
@@ -38,10 +42,14 @@ export default function VerifyEmailScreen(): React.ReactElement {
   };
 
   const handleResend = async () => {
-    if (!isLoaded || !signUp) return;
+    if (fetchStatus !== 'idle') return;
     setResending(true);
     try {
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      const { error } = await signUp.verifications.sendEmailCode();
+      if (error) {
+        Alert.alert('Error', clerkMsg(error, 'Could not resend code.'));
+        return;
+      }
       Alert.alert('Code sent', 'A new verification code has been sent to your email.');
     } catch (err) {
       Alert.alert('Error', clerkMsg(err, 'Could not resend code.'));

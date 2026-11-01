@@ -21,7 +21,7 @@ function clerkMsg(error: unknown, fallback: string): string {
 
 export default function SignUpScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signUp, setActive, isLoaded } = useSignUp();
+  const { signUp, fetchStatus } = useSignUp();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 
   const [authMethod, setAuthMethod] = useState<AuthMethod>('password');
@@ -38,11 +38,19 @@ export default function SignUpScreen(): React.ReactElement {
   };
 
   const handlePasswordSignUp = async () => {
-    if (!isLoaded || !signUp) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      await signUp.create({ emailAddress: email.trim(), password });
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      const { error: createError } = await signUp.create({ emailAddress: email.trim(), password });
+      if (createError) {
+        Alert.alert('Sign up failed', clerkMsg(createError, 'Please check your details.'));
+        return;
+      }
+      const { error: emailError } = await signUp.verifications.sendEmailCode();
+      if (emailError) {
+        Alert.alert('Sign up failed', clerkMsg(emailError, 'Could not send verification code.'));
+        return;
+      }
       router.push('/(auth)/verify-email');
     } catch (err) {
       Alert.alert('Sign up failed', clerkMsg(err, 'Please check your details.'));
@@ -52,11 +60,19 @@ export default function SignUpScreen(): React.ReactElement {
   };
 
   const handleOtpSignUp = async () => {
-    if (!isLoaded || !signUp) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      await signUp.create({ emailAddress: email.trim() });
-      await signUp.prepareEmailAddressVerification({ strategy: 'email_code' });
+      const { error: createError } = await signUp.create({ emailAddress: email.trim() });
+      if (createError) {
+        Alert.alert('Sign up failed', clerkMsg(createError, 'Please try again.'));
+        return;
+      }
+      const { error: emailError } = await signUp.verifications.sendEmailCode();
+      if (emailError) {
+        Alert.alert('Sign up failed', clerkMsg(emailError, 'Could not send verification code.'));
+        return;
+      }
       setOtpStage('verify');
     } catch (err) {
       Alert.alert('Sign up failed', clerkMsg(err, 'Please try again.'));
@@ -66,12 +82,16 @@ export default function SignUpScreen(): React.ReactElement {
   };
 
   const handleVerifyOtpSignUp = async () => {
-    if (!isLoaded || !signUp) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      const result = await signUp.attemptEmailAddressVerification({ code: otpCode.trim() });
-      if (result.status === 'complete' && result.createdSessionId) {
-        await setActive({ session: result.createdSessionId });
+      const { error } = await signUp.verifications.verifyEmailCode({ code: otpCode.trim() });
+      if (error) {
+        Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
+        return;
+      }
+      if (signUp.status === 'complete') {
+        await signUp.finalize();
         router.replace('/');
       } else {
         Alert.alert('Verification failed', 'Could not complete sign-up. Please try again.');
