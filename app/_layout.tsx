@@ -70,6 +70,9 @@ function RootNavigator(): React.ReactElement {
     await syncUserApi();
     const profile = await getMeApi();
     if (!profile.roles.some(r => ['packer','driver','org-admin','branch-manager','super-admin'].includes(r))) {
+      // Clear stale cache — user has no org/role so any persisted data belongs to a prior session
+      queryClient.clear();
+      await persister.removeClient();
       markReady(); router.replace('/(auth)/pending-role'); return;
     }
     setProfile(profile);
