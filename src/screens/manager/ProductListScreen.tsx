@@ -116,7 +116,6 @@ export function ProductListScreen({ onBack, onOpenProduct, onNewProduct }: Produ
         <FlashList
           data={products}
           keyExtractor={(p) => p.id}
-          estimatedItemSize={110}
           contentContainerStyle={{ paddingTop: 12, paddingBottom: insets.bottom + 24 }}
           renderItem={({ item }) => (
             <ProductCard product={item} onPress={() => onOpenProduct(item.id)} />

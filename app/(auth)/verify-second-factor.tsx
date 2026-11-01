@@ -14,20 +14,24 @@ function clerkMsg(error: unknown, fallback: string): string {
 
 export default function VerifySecondFactorScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn, fetchStatus } = useSignIn();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleVerify = async () => {
-    if (!isLoaded || !signIn) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      const result = await signIn.attemptSecondFactor({ strategy: 'email_code', code: code.trim() });
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
+      const { error } = await signIn.mfa.verifyEmailCode({ code: code.trim() });
+      if (error) {
+        Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
+        return;
+      }
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
         router.replace('/');
       } else {
-        Alert.alert('Verification failed', `Unexpected status: ${result.status}`);
+        Alert.alert('Verification failed', `Unexpected status: ${signIn.status}`);
       }
     } catch (err) {
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));

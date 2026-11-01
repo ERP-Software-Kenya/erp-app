@@ -23,7 +23,7 @@ function clerkMsg(error: unknown, fallback: string): string {
 
 export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signIn, setActive, isLoaded } = useSignIn();
+  const { signIn, fetchStatus } = useSignIn();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 
   const [authMethod, setAuthMethod] = useState<AuthMethod>('password');
@@ -40,29 +40,32 @@ export default function LoginScreen(): React.ReactElement {
   };
 
   const handlePasswordSignIn = async () => {
-    if (!isLoaded || !signIn) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      const result = await signIn.create({ strategy: 'password', identifier: email.trim(), password });
+      const { error } = await signIn.password({ identifier: email.trim(), password });
+      if (error) {
+        Alert.alert('Sign in failed', clerkMsg(error, 'Please check your credentials.'));
+        return;
+      }
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
         router.replace('/');
         return;
       }
 
-      if (result.status === 'needs_second_factor' || result.status === 'needs_client_trust') {
-        const emailFactor = result.supportedSecondFactors?.find(
-          (f): f is { strategy: 'email_code'; emailAddressId: string } => f.strategy === 'email_code'
-        );
-        if (emailFactor?.emailAddressId) {
-          await signIn.prepareSecondFactor({ strategy: 'email_code', emailAddressId: emailFactor.emailAddressId });
+      if (signIn.status === 'needs_second_factor' || signIn.status === 'needs_client_trust') {
+        const { error: mfaError } = await signIn.mfa.sendEmailCode();
+        if (mfaError) {
+          Alert.alert('Sign in failed', clerkMsg(mfaError, 'Could not send verification code.'));
+          return;
         }
         router.push('/(auth)/verify-second-factor');
         return;
       }
 
-      Alert.alert('Sign in failed', `Unexpected status: ${result.status}`);
+      Alert.alert('Sign in failed', `Unexpected status: ${signIn.status}`);
     } catch (err) {
       Alert.alert('Sign in failed', clerkMsg(err, 'Please check your credentials.'));
     } finally {
@@ -71,10 +74,14 @@ export default function LoginScreen(): React.ReactElement {
   };
 
   const handleSendOtp = async () => {
-    if (!isLoaded || !signIn) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      await signIn.create({ strategy: 'email_code', identifier: email.trim() });
+      const { error } = await signIn.emailCode.sendCode({ emailAddress: email.trim() });
+      if (error) {
+        Alert.alert('Failed to send code', clerkMsg(error, 'Please try again.'));
+        return;
+      }
       setOtpStage('verify');
     } catch (err) {
       Alert.alert('Failed to send code', clerkMsg(err, 'Please try again.'));
@@ -84,23 +91,27 @@ export default function LoginScreen(): React.ReactElement {
   };
 
   const handleVerifyOtp = async () => {
-    if (!isLoaded || !signIn) return;
+    if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
-      const result = await signIn.attemptFirstFactor({ strategy: 'email_code', code: otpCode.trim() });
+      const { error } = await signIn.emailCode.verifyCode({ code: otpCode.trim() });
+      if (error) {
+        Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
+        return;
+      }
 
-      if (result.status === 'complete') {
-        await setActive({ session: result.createdSessionId });
+      if (signIn.status === 'complete') {
+        await signIn.finalize();
         router.replace('/');
         return;
       }
 
-      if (result.status === 'needs_second_factor') {
+      if (signIn.status === 'needs_second_factor') {
         router.push('/(auth)/verify-second-factor');
         return;
       }
 
-      Alert.alert('Verification failed', `Unexpected status: ${result.status}`);
+      Alert.alert('Verification failed', `Unexpected status: ${signIn.status}`);
     } catch (err) {
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));
     } finally {

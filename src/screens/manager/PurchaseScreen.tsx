@@ -140,7 +140,6 @@ function POTab({ onOpenPO, onNewPO }: { onOpenPO: (id: string) => void; onNewPO:
         data={rows}
         renderItem={({ item }) => <POCard po={item} onPress={() => onOpenPO(item.id)} />}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={90}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={isLoading ? null : <EmptyState icon="🛍️" title="No purchase orders" />}
@@ -173,7 +172,6 @@ function PRTab({ onOpenReturn, onNewReturn }: { onOpenReturn: (id: string) => vo
         data={rows}
         renderItem={({ item }) => <PRCard ret={item} onPress={() => onOpenReturn(item.id)} />}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={80}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={isLoading ? null : <EmptyState icon="↩️" title="No purchase returns" />}

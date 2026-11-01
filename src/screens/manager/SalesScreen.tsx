@@ -297,7 +297,6 @@ function OrdersTab({
         data={rows}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={90}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
@@ -394,7 +393,6 @@ function QuotationsTab({
         data={rows}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={90}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={
@@ -491,7 +489,6 @@ function ReturnsTab({
         data={rows}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={90}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={

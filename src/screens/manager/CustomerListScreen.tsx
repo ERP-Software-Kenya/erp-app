@@ -75,7 +75,6 @@ export function CustomerListScreen({ onOpenCustomer, onBack }: CustomerListScree
         data={rows}
         renderItem={renderItem}
         keyExtractor={(item) => item.id}
-        estimatedItemSize={80}
         onEndReached={() => { if (hasNextPage && !isFetchingNextPage) void fetchNextPage(); }}
         onEndReachedThreshold={0.4}
         ListEmptyComponent={isLoading ? null : <EmptyState icon="👥" title="No customers found" />}
