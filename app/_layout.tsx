@@ -69,8 +69,8 @@ function RootNavigator(): React.ReactElement {
     setBootstrapError(null);
     await syncUserApi();
     const profile = await getMeApi();
-    if (!profile.roles.some((role) => role === 'packer' || role === 'driver')) {
-      throw new Error('This account is not assigned as a packer or driver.');
+    if (!profile.roles.some(r => ['packer','driver','org-admin','branch-manager','super-admin'].includes(r))) {
+      markReady(); router.replace('/(auth)/pending-role'); return;
     }
     setProfile(profile);
     await upsertDeviceSessionApi(await getDeviceSession());
@@ -125,6 +125,7 @@ function RootNavigator(): React.ReactElement {
     void bootstrap().catch((error: unknown) => {
       markReady();
       setBootstrapError(error instanceof Error ? error.message : 'Unable to load your account.');
+      router.replace('/(auth)/pending-role');
     });
   }, [isLoaded, isInviteRoute, bootstrap, markReady]);
 
@@ -162,8 +163,14 @@ function RootNavigator(): React.ReactElement {
       router.replace('/(picker)');
     } else if (role === 'driver') {
       router.replace('/(driver)');
+    } else if (role === 'org-admin') {
+      router.replace('/(org-admin)');
+    } else if (role === 'branch-manager') {
+      router.replace('/(branch-manager)');
+    } else if (role === 'super-admin') {
+      router.replace('/(super-admin)');
     } else {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/pending-role');
     }
   }, [isLoaded, isReady, isSignedIn, role, bootstrapError, isInviteRoute]);
 
@@ -175,24 +182,15 @@ function RootNavigator(): React.ReactElement {
     return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" /></View>;
   }
 
-  if (isSignedIn && bootstrapError) {
-    return (
-      <View className="flex-1 items-center justify-center px-8 bg-surface">
-        <Text className="text-text font-bold text-xl mb-2">Account unavailable</Text>
-        <Text className="text-muted text-center mb-6">{bootstrapError}</Text>
-        <TouchableOpacity className="bg-primary px-6 py-3 rounded-xl" onPress={() => void bootstrap()}>
-          <Text className="text-white font-bold">Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(auth)" />
       <Stack.Screen name="(picker)" />
       <Stack.Screen name="(driver)" />
       <Stack.Screen name="(shared)" />
+      <Stack.Screen name="(org-admin)" />
+      <Stack.Screen name="(branch-manager)" />
+      <Stack.Screen name="(super-admin)" />
     </Stack>
   );
 }

@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   Platform,
   ActivityIndicator,
 } from 'react-native';
@@ -10,27 +9,64 @@ import MapView, { Marker, PROVIDER_DEFAULT, UrlTile, type Region } from 'react-n
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTodayTrips, useTripDetail } from '../../src/hooks/useTrips';
+import { AppHeader } from '../../src/components/common/AppHeader';
 import type { DeliveryStop } from '../../src/api/trips.api';
 import { getActiveTripId } from '../../src/store/active-trip';
 
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
+// ── GPS status badge ──────────────────────────────────────────────────────────
 function GpsBadge({ active }: { active: boolean }): React.ReactElement {
   return (
     <View
-      className={[
-        'flex-row items-center gap-1.5 px-3 py-1.5 rounded-full',
-        active ? 'bg-success/10' : 'bg-muted/10',
-      ].join(' ')}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 20,
+        backgroundColor: active ? '#dcfce7' : '#f1f5f9',
+      }}
     >
-      <View className={`w-2 h-2 rounded-full ${active ? 'bg-success' : 'bg-muted'}`} />
-      <Text className={`text-xs font-semibold ${active ? 'text-success' : 'text-muted'}`}>
+      <View
+        style={{
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+          backgroundColor: active ? '#22c55e' : '#94a3b8',
+        }}
+      />
+      <Text
+        style={{
+          fontSize: 12,
+          fontWeight: '700',
+          color: active ? '#16a34a' : '#64748b',
+        }}
+      >
         {active ? 'GPS Live' : 'GPS Off'}
       </Text>
     </View>
   );
 }
 
+// ── Stat item ─────────────────────────────────────────────────────────────────
+interface StatItemProps {
+  value: string;
+  label: string;
+  accent?: string;
+}
+
+function StatItem({ value, label, accent = '#0f172a' }: StatItemProps): React.ReactElement {
+  return (
+    <View style={{ flex: 1, alignItems: 'center', paddingVertical: 4 }}>
+      <Text style={{ color: accent, fontWeight: '800', fontSize: 20 }}>{value}</Text>
+      <Text style={{ color: '#94a3b8', fontSize: 11, marginTop: 2 }}>{label}</Text>
+    </View>
+  );
+}
+
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function TrackingScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { data: trips } = useTodayTrips();
@@ -45,6 +81,7 @@ export default function TrackingScreen(): React.ReactElement {
     (s) => s.status === 'current',
   );
   const stopsRemaining = activeTrip?.stops.filter((s) => s.status !== 'delivered').length ?? 0;
+  const deliveredCount = activeTrip?.stops.filter((s) => s.status === 'delivered').length ?? 0;
 
   useEffect(() => {
     let subscription: Location.LocationSubscription | null = null;
@@ -75,19 +112,14 @@ export default function TrackingScreen(): React.ReactElement {
     longitudeDelta: 0.05,
   };
 
-  const showMap =
-    driverLocation !== null || (nextStop !== undefined);
+  const showMap = driverLocation !== null || nextStop !== undefined;
 
   return (
-    <View className="flex-1 bg-surface" style={{ paddingTop: insets.top }}>
-      {/* Header */}
-      <View className="bg-white border-b border-border px-4 py-3 flex-row items-center justify-between">
-        <Text className="text-text font-bold text-lg">Live Tracking</Text>
-        <GpsBadge active={gpsActive} />
-      </View>
+    <View style={{ flex: 1, backgroundColor: '#f0f4f8' }}>
+      <AppHeader title="Live Tracking" right={<GpsBadge active={gpsActive} />} />
 
       {/* Map */}
-      <View className="flex-1">
+      <View style={{ flex: 1 }}>
         {showMap ? (
           <MapView
             style={{ flex: 1 }}
@@ -96,7 +128,9 @@ export default function TrackingScreen(): React.ReactElement {
             mapType={Platform.OS === 'android' ? 'none' : 'standard'}
             showsUserLocation={false}
           >
-            {Platform.OS === 'android' && <UrlTile urlTemplate={OSM_TILE_URL} maximumZ={19} />}
+            {Platform.OS === 'android' && (
+              <UrlTile urlTemplate={OSM_TILE_URL} maximumZ={19} />
+            )}
             {driverLocation && (
               <Marker
                 coordinate={{
@@ -120,44 +154,99 @@ export default function TrackingScreen(): React.ReactElement {
             )}
           </MapView>
         ) : (
-          <View className="flex-1 items-center justify-center">
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator color="#3b74f5" size="large" />
-            <Text className="text-muted text-sm mt-3">Acquiring GPS…</Text>
+            <Text style={{ color: '#64748b', fontSize: 14, marginTop: 12 }}>
+              Acquiring GPS signal…
+            </Text>
           </View>
         )}
       </View>
 
       {/* Stats row */}
-      <View className="bg-white border-t border-border px-4 py-3 flex-row gap-4">
-        <View className="flex-1 items-center">
-          <Text className="text-text font-bold text-xl">{stopsRemaining}</Text>
-          <Text className="text-muted text-xs">Stops left</Text>
-        </View>
-        <View className="w-px bg-border" />
-        <View className="flex-1 items-center">
-          <Text className="text-text font-bold text-sm">
-            {lastGpsTime
-              ? lastGpsTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-              : '--:--:--'}
-          </Text>
-          <Text className="text-muted text-xs">Last GPS</Text>
-        </View>
-        <View className="w-px bg-border" />
-        <View className="flex-1 items-center">
-          <View className={`w-3 h-3 rounded-full ${gpsActive ? 'bg-success' : 'bg-muted'}`} />
-          <Text className="text-muted text-xs mt-1">GPS Status</Text>
-        </View>
+      <View
+        style={{
+          backgroundColor: '#ffffff',
+          borderTopWidth: 1,
+          borderTopColor: '#dde5f0',
+          flexDirection: 'row',
+          paddingVertical: 12,
+          paddingHorizontal: 8,
+        }}
+      >
+        <StatItem
+          value={String(stopsRemaining)}
+          label="Stops left"
+          accent="#3b74f5"
+        />
+        <View style={{ width: 1, backgroundColor: '#dde5f0', marginVertical: 4 }} />
+        <StatItem
+          value={String(deliveredCount)}
+          label="Delivered"
+          accent="#22c55e"
+        />
+        <View style={{ width: 1, backgroundColor: '#dde5f0', marginVertical: 4 }} />
+        <StatItem
+          value={
+            lastGpsTime
+              ? lastGpsTime.toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                  second: '2-digit',
+                })
+              : '--:--'
+          }
+          label="Last GPS ping"
+          accent="#0f172a"
+        />
       </View>
 
       {/* Next stop card */}
       {nextStop && (
         <View
-          className="bg-white border-t border-border px-4 pt-3"
-          style={{ paddingBottom: insets.bottom + 8 }}
+          style={{
+            backgroundColor: '#ffffff',
+            borderTopWidth: 1,
+            borderTopColor: '#dde5f0',
+            paddingHorizontal: 16,
+            paddingTop: 14,
+            paddingBottom: insets.bottom + 14,
+          }}
         >
-          <Text className="text-muted text-xs font-semibold uppercase mb-1">Next Stop</Text>
-          <Text className="text-text font-bold text-base">{nextStop.customerName}</Text>
-          <Text className="text-muted text-sm mt-0.5 mb-3">{nextStop.address}</Text>
+          <Text
+            style={{
+              color: '#64748b',
+              fontSize: 10,
+              fontWeight: '700',
+              textTransform: 'uppercase',
+              letterSpacing: 0.8,
+              marginBottom: 6,
+            }}
+          >
+            Next Stop
+          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 20,
+                backgroundColor: '#eff6ff',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 18 }}>📍</Text>
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ color: '#0f172a', fontWeight: '700', fontSize: 15 }}>
+                {nextStop.customerName}
+              </Text>
+              <Text style={{ color: '#64748b', fontSize: 13, marginTop: 2 }}>
+                {nextStop.address}
+              </Text>
+            </View>
+          </View>
         </View>
       )}
     </View>
