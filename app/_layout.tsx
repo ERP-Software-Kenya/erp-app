@@ -8,7 +8,10 @@ import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
-import { ActivityIndicator, AppState, View, type AppStateStatus } from 'react-native';
+import { ActivityIndicator, AppState, Text, TouchableOpacity, View, type AppStateStatus } from 'react-native';
+import * as Application from 'expo-application';
+import { getLatestRelease, type ReleaseMetadata } from '../src/api/releases.api';
+import { UpdateRequired } from '../src/components/UpdateRequired';
 import { buildMmkvPersister } from '../src/utils/mmkv-persister';
 import { useAuthStore } from '../src/store/auth.store';
 import {
@@ -52,6 +55,7 @@ function RootNavigator(): React.ReactElement {
   const { loadFromStorage, flush, clear: clearQueue } = useQueueStore();
   const appState = useRef(AppState.currentState);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [latestRelease, setLatestRelease] = useState<ReleaseMetadata | null>(null);
 
   const bootstrap = useCallback(async (): Promise<void> => {
     if (!isSignedIn) {
@@ -73,6 +77,21 @@ function RootNavigator(): React.ReactElement {
     await registerExpoToken();
     await flush();
   }, [isSignedIn, clearAuth, clearQueue, setProfile, flush]);
+
+  useEffect(() => {
+    void (async (): Promise<void> => {
+      try {
+        const latest = await getLatestRelease();
+        const running = Application.nativeBuildVersion;
+        if (!running) return;
+        if (parseInt(latest.buildNumber, 10) > parseInt(running, 10)) {
+          setLatestRelease(latest);
+        }
+      } catch {
+        // Network error or no release published — don't block the user
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     loadFromStorage();
@@ -154,6 +173,10 @@ function RootNavigator(): React.ReactElement {
       router.replace('/(auth)/pending-role');
     }
   }, [isLoaded, isReady, isSignedIn, role, bootstrapError, isInviteRoute]);
+
+  if (latestRelease !== null) {
+    return <UpdateRequired latest={latestRelease} />;
+  }
 
   if (!isLoaded || !isReady) {
     return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" /></View>;
