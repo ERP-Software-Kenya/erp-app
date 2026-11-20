@@ -94,7 +94,6 @@ export default function PickerQueueScreen(): React.ReactElement {
           data={orders ?? []}
           renderItem={renderItem}
           keyExtractor={(item) => item.id}
-          estimatedItemSize={160}
           ListEmptyComponent={<EmptyQueue />}
           refreshControl={
             <RefreshControl refreshing={isRefetching} onRefresh={refetch} />

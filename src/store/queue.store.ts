@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import { apiClient } from '../api/client';
 
-const queueStorage = new MMKV({ id: 'erp-queue' });
+const queueStorage = createMMKV({ id: 'erp-queue' });
 const QUEUE_KEY = 'offlineQueue';
 
 export type MutationType = 'claim' | 'pack' | 'gps' | 'tripStatus';
@@ -20,6 +20,7 @@ interface QueueState {
   enqueue: (type: MutationType, payload: Record<string, unknown>) => void;
   flush: () => Promise<void>;
   loadFromStorage: () => void;
+  clear: () => void;
 }
 
 function persistQueue(queue: QueuedMutation[]): void {
@@ -40,22 +41,22 @@ async function executeMutation(mutation: QueuedMutation): Promise<void> {
   const { type, payload } = mutation;
   switch (type) {
     case 'claim':
-      await apiClient.post(`/v1/orders/${payload.orderId as string}/claim`);
+      await apiClient.post(`/v1/warehouse/orders/${payload.orderId as string}/claim`);
       break;
     case 'pack':
-      await apiClient.post(`/v1/orders/${payload.orderId as string}/pack`, {
+      await apiClient.post(`/v1/warehouse/orders/${payload.orderId as string}/pack`, {
         items: payload.items,
       });
       break;
     case 'gps':
-      await apiClient.post(`/v1/trips/${payload.tripId as string}/location`, {
+      await apiClient.post(`/v1/field-ops/trips/${payload.tripId as string}/location`, {
         latitude: payload.latitude,
         longitude: payload.longitude,
         accuracy: payload.accuracy,
       });
       break;
     case 'tripStatus':
-      await apiClient.patch(`/v1/trips/${payload.tripId as string}/status`, {
+      await apiClient.patch(`/v1/field-ops/trips/${payload.tripId as string}/status`, {
         status: payload.status,
       });
       break;
@@ -68,6 +69,11 @@ export const useQueueStore = create<QueueState>((set, get) => ({
 
   loadFromStorage: (): void => {
     set({ queue: loadQueue() });
+  },
+
+  clear: (): void => {
+    persistQueue([]);
+    set({ queue: [], isFlushing: false });
   },
 
   enqueue: (type: MutationType, payload: Record<string, unknown>): void => {

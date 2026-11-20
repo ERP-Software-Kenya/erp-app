@@ -6,11 +6,14 @@ import {
   packOrderApi,
   type PackItemPayload,
 } from '../api/orders.api';
+import { useAuthStore } from '../store/auth.store';
 
 export function useOrderQueue() {
+  const locationIds = useAuthStore((state) => state.locationIds);
   return useQuery({
-    queryKey: ['orders', 'queue'],
-    queryFn: getOrderQueueApi,
+    queryKey: ['orders', 'queue', locationIds],
+    queryFn: () => getOrderQueueApi(locationIds),
+    enabled: locationIds.length > 0,
     staleTime: 30_000,
   });
 }

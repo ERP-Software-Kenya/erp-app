@@ -1,0 +1,110 @@
+name: Release Android app
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-production-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build signed APK and publish to B2
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.B2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: ${{ vars.B2_REGION }}
+      B2_ENDPOINT: ${{ vars.B2_ENDPOINT }}
+      B2_BUCKET: ${{ vars.B2_BUCKET }}
+      RELEASE_KEY_PREFIX: releases/mobile/android/stable
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Validate release configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(EXPO_TOKEN AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION B2_ENDPOINT B2_BUCKET)
+          for name in "${required[@]}"; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub secret or variable: $name" >&2
+              exit 1
+            fi
+          done
+          case "$B2_ENDPOINT" in https://*) ;; *) echo "B2_ENDPOINT must use HTTPS" >&2; exit 1 ;; esac
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npx tsc --noEmit
+
+      - name: Set up EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build signed Android APK
+        run: eas build --platform android --profile release-apk --non-interactive --wait --json > "$RUNNER_TEMP/eas-build.json"
+
+      - name: Download and describe build
+        env:
+          BUILD_JSON_PATH: ${{ runner.temp }}/eas-build.json
+          APK_PATH: ${{ runner.temp }}/erp-app.apk
+          RELEASE_METADATA_PATH: ${{ runner.temp }}/release-metadata.json
+        run: node scripts/prepare-android-release.mjs
+
+      - name: Upload immutable and latest artifacts
+        env:
+          APK_PATH: ${{ runner.temp }}/erp-app.apk
+          RELEASE_METADATA_PATH: ${{ runner.temp }}/release-metadata.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(node -p "JSON.parse(require('fs').readFileSync(process.env.RELEASE_METADATA_PATH)).version")
+          build=$(node -p "JSON.parse(require('fs').readFileSync(process.env.RELEASE_METADATA_PATH)).buildNumber")
+          immutable_key="$RELEASE_KEY_PREFIX/$version/$build/erp-app.apk"
+
+          aws s3 cp "$APK_PATH" "s3://$B2_BUCKET/$immutable_key" \
+            --endpoint-url "$B2_ENDPOINT" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control "public,max-age=31536000,immutable" \
+            --no-progress
+
+          aws s3 cp "$APK_PATH" "s3://$B2_BUCKET/$RELEASE_KEY_PREFIX/latest/erp-app.apk" \
+            --endpoint-url "$B2_ENDPOINT" \
+            --content-type application/vnd.android.package-archive \
+            --cache-control "public,max-age=300" \
+            --no-progress
+
+          aws s3 cp "$RELEASE_METADATA_PATH" "s3://$B2_BUCKET/$RELEASE_KEY_PREFIX/latest.json" \
+            --endpoint-url "$B2_ENDPOINT" \
+            --content-type application/json \
+            --cache-control "public,max-age=60,must-revalidate" \
+            --no-progress
+
+      - name: Publish workflow summary
+        env:
+          RELEASE_METADATA_PATH: ${{ runner.temp }}/release-metadata.json
+        shell: bash
+        run: |
+          echo "## Android release published" >> "$GITHUB_STEP_SUMMARY"
+          node -e "const r=JSON.parse(require('fs').readFileSync(process.env.RELEASE_METADATA_PATH)); console.log('- Version: '+r.version+' ('+r.buildNumber+')\n- SHA-256: '+r.sha256+'\n- Private object: '+r.artifactKey)" >> "$GITHUB_STEP_SUMMARY"

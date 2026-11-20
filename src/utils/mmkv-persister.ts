@@ -1,7 +1,7 @@
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import type { Persister, PersistedClient } from '@tanstack/react-query-persist-client';
 
-export const storage = new MMKV({ id: 'erp-query-cache' });
+export const storage = createMMKV({ id: 'erp-query-cache' });
 
 export function buildMmkvPersister(): Persister {
   return {
@@ -14,7 +14,7 @@ export function buildMmkvPersister(): Persister {
       return JSON.parse(cached) as PersistedClient;
     },
     removeClient: async (): Promise<void> => {
-      storage.delete('queryCache');
+      storage.remove('queryCache');
     },
   };
 }

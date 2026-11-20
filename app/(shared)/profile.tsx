@@ -2,11 +2,15 @@ import React from 'react';
 import { View, Text, TouchableOpacity, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { useClerk } from '@clerk/expo';
+import { endCurrentSessionApi } from '../../src/api/auth.api';
 import { useAuthStore } from '../../src/store/auth.store';
+import { stopGpsTask } from '../(driver)/_layout';
 
 export default function ProfileScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { userId, role, clearAuth } = useAuthStore();
+  const { signOut } = useClerk();
 
   const handleLogout = (): void => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -15,8 +19,13 @@ export default function ProfileScreen(): React.ReactElement {
         text: 'Sign Out',
         style: 'destructive',
         onPress: () => {
-          clearAuth();
-          router.replace('/(auth)/login');
+          void (async () => {
+            await endCurrentSessionApi().catch(() => undefined);
+            await stopGpsTask();
+            clearAuth();
+            await signOut();
+            router.replace('/(auth)/login');
+          })();
         },
       },
     ]);

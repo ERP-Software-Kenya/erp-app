@@ -26,12 +26,25 @@ export interface Trip {
 }
 
 export async function getTodayTripsApi(): Promise<Trip[]> {
-  const response = await apiClient.get<Trip[]>('/v1/driver/trips/today');
-  return response.data;
+  const response = await apiClient.get<Array<{
+    id: string;
+    tripNumber: string;
+    tripStatus: TripStatus;
+    startDatetime: string;
+    stopCount: number;
+  }>>('/v1/field-ops/driver/trips/today');
+  return response.data.map((trip) => ({
+    ...trip,
+    vehiclePlate: '',
+    status: trip.tripStatus,
+    stops: [],
+    deliveredCount: 0,
+    createdAt: trip.startDatetime,
+  }));
 }
 
 export async function getTripDetailApi(tripId: string): Promise<Trip> {
-  const response = await apiClient.get<Trip>(`/v1/trips/${tripId}`);
+  const response = await apiClient.get<Trip>(`/v1/field-ops/driver/trips/${tripId}`);
   return response.data;
 }
 
@@ -39,7 +52,7 @@ export async function updateTripStatusApi(
   tripId: string,
   status: TripStatus,
 ): Promise<void> {
-  await apiClient.patch(`/v1/trips/${tripId}/status`, { status });
+  await apiClient.patch(`/v1/field-ops/trips/${tripId}/status`, { status });
 }
 
 export async function initiateDeliveryApi(
@@ -47,7 +60,7 @@ export async function initiateDeliveryApi(
   stopId: string,
 ): Promise<{ maskedEmail: string }> {
   const response = await apiClient.post<{ maskedEmail: string }>(
-    `/v1/trips/${tripId}/stops/${stopId}/initiate-delivery`,
+    `/v1/field-ops/trips/${tripId}/stops/${stopId}/initiate-delivery`,
   );
   return response.data;
 }
@@ -57,5 +70,5 @@ export async function confirmDeliveryApi(
   stopId: string,
   otp: string,
 ): Promise<void> {
-  await apiClient.post(`/v1/trips/${tripId}/stops/${stopId}/confirm-delivery`, { otp });
+  await apiClient.post(`/v1/field-ops/trips/${tripId}/stops/${stopId}/confirm-delivery`, { otp });
 }

@@ -1,26 +1,28 @@
 import { create } from 'zustand';
-import { authStorage } from '../api/client';
 
-export type UserRole = 'PICKER' | 'DRIVER';
+export type UserRole = 'packer' | 'driver';
 
-export interface JwtPayload {
-  sub: string;
-  role: UserRole;
-  locationId: string;
-  organizationId: string;
-  iat: number;
-  exp: number;
+export interface AuthProfile {
+  id: string;
+  clerkUserId: string;
+  email: string;
+  roles: string[];
+  isOnboarded: boolean;
+  organization?: { id: string; name: string };
+  locationIds: string[];
+  hasOrgWideAccess: boolean;
+  branchId?: string;
 }
 
 export interface AuthState {
-  token: string | null;
+  isReady: boolean;
   userId: string | null;
   role: UserRole | null;
-  locationId: string | null;
+  locationIds: string[];
   organizationId: string | null;
-  setAuth: (token: string, decoded: JwtPayload) => void;
+  setProfile: (profile: AuthProfile) => void;
+  markReady: () => void;
   clearAuth: () => void;
-  hydrate: () => void;
 }
 
 export function parseJwtPayload(token: string): JwtPayload | null {
@@ -32,6 +34,10 @@ export function parseJwtPayload(token: string): JwtPayload | null {
   } catch {
     return null;
   }
+function fieldRole(roles: string[]): UserRole | null {
+  if (roles.includes('packer')) return 'packer';
+  if (roles.includes('driver')) return 'driver';
+  return null;
 }
 
 function isTokenExpired(decoded: JwtPayload): boolean {
@@ -39,30 +45,30 @@ function isTokenExpired(decoded: JwtPayload): boolean {
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
-  token: null,
+  isReady: false,
   userId: null,
   role: null,
-  locationId: null,
+  locationIds: [],
   organizationId: null,
 
-  setAuth: (token: string, decoded: JwtPayload): void => {
-    authStorage.set('jwt', token);
+  setProfile: (profile: AuthProfile): void => {
     set({
-      token,
-      userId: decoded.sub,
-      role: decoded.role,
-      locationId: decoded.locationId,
-      organizationId: decoded.organizationId,
+      isReady: true,
+      userId: profile.id,
+      role: fieldRole(profile.roles),
+      locationIds: profile.locationIds,
+      organizationId: profile.organization?.id ?? null,
     });
   },
 
+  markReady: (): void => set({ isReady: true }),
+
   clearAuth: (): void => {
-    authStorage.delete('jwt');
     set({
-      token: null,
+      isReady: true,
       userId: null,
       role: null,
-      locationId: null,
+      locationIds: [],
       organizationId: null,
     });
   },

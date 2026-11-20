@@ -1,14 +1,26 @@
 import '../global.css';
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Stack, router } from 'expo-router';
+import { ClerkProvider, useAuth, useClerk } from '@clerk/expo';
+import { tokenCache } from '@clerk/expo/token-cache';
+import NetInfo from '@react-native-community/netinfo';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
+import { ActivityIndicator, AppState, Text, TouchableOpacity, View, type AppStateStatus } from 'react-native';
 import { buildMmkvPersister } from '../src/utils/mmkv-persister';
 import { useAuthStore } from '../src/store/auth.store';
-import { registerDeviceTokenApi } from '../src/api/auth.api';
+import {
+  getMeApi,
+  registerDeviceTokenApi,
+  syncUserApi,
+  upsertDeviceSessionApi,
+} from '../src/api/auth.api';
+import { configureApiAuth } from '../src/api/client';
+import { getDeviceSession } from '../src/auth/device-session';
 import { useQueueStore } from '../src/store/queue.store';
+import { clearActiveTripId } from '../src/store/active-trip';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,30 +43,111 @@ Notifications.setNotificationHandler({
 });
 
 function RootNavigator(): React.ReactElement {
-  const { hydrate, token, role } = useAuthStore();
-  const { loadFromStorage } = useQueueStore();
+  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { signOut } = useClerk();
+  const { isReady, role, setProfile, markReady, clearAuth } = useAuthStore();
+  const { loadFromStorage, flush, clear: clearQueue } = useQueueStore();
+  const appState = useRef(AppState.currentState);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+
+  const bootstrap = useCallback(async (): Promise<void> => {
+    if (!isSignedIn) {
+      queryClient.clear();
+      await persister.removeClient();
+      clearQueue();
+      clearActiveTripId();
+      clearAuth();
+      return;
+    }
+    setBootstrapError(null);
+    await syncUserApi();
+    const profile = await getMeApi();
+    if (!profile.roles.some((role) => role === 'packer' || role === 'driver')) {
+      throw new Error('This account is not assigned as a packer or driver.');
+    }
+    setProfile(profile);
+    await upsertDeviceSessionApi(await getDeviceSession());
+    await registerExpoToken();
+    await flush();
+  }, [isSignedIn, clearAuth, clearQueue, setProfile, flush]);
 
   useEffect(() => {
-    hydrate();
     loadFromStorage();
-  }, [hydrate, loadFromStorage]);
+  }, [loadFromStorage]);
+
+  useEffect(() => NetInfo.addEventListener((state) => {
+    if (state.isConnected && state.isInternetReachable !== false) void flush();
+  }), [flush]);
+
+  useEffect(() => configureApiAuth({
+    getToken,
+    onSessionInvalid: () => {
+      clearAuth();
+      void signOut();
+    },
+  }), [getToken, clearAuth, signOut]);
 
   useEffect(() => {
-    if (!token) {
+    if (!isLoaded) return;
+    void bootstrap().catch((error: unknown) => {
+      markReady();
+      setBootstrapError(error instanceof Error ? error.message : 'Unable to load your account.');
+    });
+  }, [isLoaded, bootstrap, markReady]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const interval = setInterval(() => {
+      void getDeviceSession()
+        .then((device) => upsertDeviceSessionApi(device))
+        .catch(() => undefined);
+    }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [isSignedIn]);
+
+  useEffect(() => {
+    if (!isSignedIn) return;
+    const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
+      const returning = appState.current.match(/background|inactive/) && nextState === 'active';
+      appState.current = nextState;
+      if (!returning) return;
+      void getToken({ skipCache: true })
+        .then((token) => token ? bootstrap() : undefined)
+        .catch(() => undefined);
+    });
+    return () => subscription.remove();
+  }, [isSignedIn, getToken, bootstrap]);
+
+  useEffect(() => {
+    if (!isLoaded || !isReady || bootstrapError) return;
+    if (!isSignedIn) {
       router.replace('/(auth)/login');
       return;
     }
-    if (role === 'PICKER') {
+    if (role === 'packer') {
       router.replace('/(picker)');
-    } else if (role === 'DRIVER') {
+    } else if (role === 'driver') {
       router.replace('/(driver)');
+    } else {
+      router.replace('/(auth)/login');
     }
-  }, [token, role]);
+  }, [isLoaded, isReady, isSignedIn, role, bootstrapError]);
 
-  useEffect(() => {
-    if (!token) return;
-    void registerExpoToken();
-  }, [token]);
+  if (!isLoaded || !isReady) {
+    return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" /></View>;
+  }
+
+  if (isSignedIn && bootstrapError) {
+    return (
+      <View className="flex-1 items-center justify-center px-8 bg-surface">
+        <Text className="text-text font-bold text-xl mb-2">Account unavailable</Text>
+        <Text className="text-muted text-center mb-6">{bootstrapError}</Text>
+        <TouchableOpacity className="bg-primary px-6 py-3 rounded-xl" onPress={() => void bootstrap()}>
+          <Text className="text-white font-bold">Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
@@ -78,14 +171,20 @@ async function registerExpoToken(): Promise<void> {
 }
 
 export default function RootLayout(): React.ReactElement {
+  const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  if (!publishableKey) {
+    throw new Error('EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY is required');
+  }
   return (
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister }}
-    >
-      <SafeAreaProvider>
-        <RootNavigator />
-      </SafeAreaProvider>
-    </PersistQueryClientProvider>
+    <ClerkProvider publishableKey={publishableKey} tokenCache={tokenCache}>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister }}
+      >
+        <SafeAreaProvider>
+          <RootNavigator />
+        </SafeAreaProvider>
+      </PersistQueryClientProvider>
+    </ClerkProvider>
   );
 }

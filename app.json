@@ -44,7 +44,10 @@
           "color": "#3b74f5",
           "sounds": []
         }
-      ]
+      ],
+      "@clerk/expo",
+      "expo-secure-store",
+      "expo-web-browser"
     ]
   }
 }

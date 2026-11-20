@@ -6,11 +6,12 @@ import {
   Platform,
   ActivityIndicator,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_DEFAULT, type Region } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_DEFAULT, UrlTile, type Region } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useTodayTrips } from '../../src/hooks/useTrips';
+import { useTodayTrips, useTripDetail } from '../../src/hooks/useTrips';
 import type { DeliveryStop } from '../../src/api/trips.api';
+import { getActiveTripId } from '../../src/store/active-trip';
 
 const OSM_TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 
@@ -37,7 +38,9 @@ export default function TrackingScreen(): React.ReactElement {
   const [gpsActive, setGpsActive] = useState(false);
   const [lastGpsTime, setLastGpsTime] = useState<Date | null>(null);
 
-  const activeTrip = trips?.find((t) => t.status === 'in_transit');
+  const activeTripSummary = trips?.find((t) => t.status === 'in_transit');
+  const activeTripId = getActiveTripId() ?? activeTripSummary?.id ?? '';
+  const { data: activeTrip } = useTripDetail(activeTripId);
   const nextStop: DeliveryStop | undefined = activeTrip?.stops.find(
     (s) => s.status === 'current',
   );
@@ -91,9 +94,9 @@ export default function TrackingScreen(): React.ReactElement {
             provider={PROVIDER_DEFAULT}
             initialRegion={initialRegion}
             mapType={Platform.OS === 'android' ? 'none' : 'standard'}
-            urlTemplate={Platform.OS === 'android' ? OSM_TILE_URL : undefined}
             showsUserLocation={false}
           >
+            {Platform.OS === 'android' && <UrlTile urlTemplate={OSM_TILE_URL} maximumZ={19} />}
             {driverLocation && (
               <Marker
                 coordinate={{

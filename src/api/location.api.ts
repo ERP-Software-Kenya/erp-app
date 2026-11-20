@@ -10,7 +10,7 @@ export async function postLocationUpdateApi(
   tripId: string,
   location: LocationUpdate,
 ): Promise<void> {
-  await apiClient.post(`/v1/trips/${tripId}/location`, location);
+  await apiClient.post(`/v1/field-ops/trips/${tripId}/location`, location);
 }
 
 export async function getCentrifugoTokenApi(): Promise<string> {

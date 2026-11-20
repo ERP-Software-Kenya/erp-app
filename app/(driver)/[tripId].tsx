@@ -14,7 +14,9 @@ import {
   useTripDetail,
   useInitiateDelivery,
   useConfirmDelivery,
+  useUpdateTripStatus,
 } from '../../src/hooks/useTrips';
+import { stopGpsTask } from './_layout';
 import { StopItem } from '../../src/components/StopItem';
 import { OtpInput } from '../../src/components/OtpInput';
 import type { DeliveryStop } from '../../src/api/trips.api';
@@ -165,6 +167,7 @@ export default function TripDetailScreen(): React.ReactElement {
   const { tripId } = useLocalSearchParams<{ tripId: string }>();
   const insets = useSafeAreaInsets();
   const { data: trip, isLoading } = useTripDetail(tripId);
+  const updateStatus = useUpdateTripStatus();
   const [otpStop, setOtpStop] = useState<DeliveryStop | null>(null);
 
   const deliveredCount = trip?.stops.filter((s) => s.status === 'delivered').length ?? 0;
@@ -177,14 +180,17 @@ export default function TripDetailScreen(): React.ReactElement {
         (s) => s.stopId === stopId || s.status === 'delivered',
       );
       if (allDone) {
-        Alert.alert(
-          'Trip Complete!',
-          'All stops delivered. Great work!',
-          [{ text: 'OK', onPress: () => router.replace('/(driver)') }],
-        );
+        void updateStatus.mutateAsync({ tripId, status: 'completed' })
+          .then(() => stopGpsTask())
+          .then(() => Alert.alert(
+            'Trip Complete!',
+            'All stops delivered. Great work!',
+            [{ text: 'OK', onPress: () => router.replace('/(driver)') }],
+          ))
+          .catch(() => Alert.alert('Delivery recorded', 'The trip status will be retried when connectivity returns.'));
       }
     },
-    [trip],
+    [trip, tripId, updateStatus],
   );
 
   if (isLoading) {
