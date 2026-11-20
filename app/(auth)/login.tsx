@@ -1,10 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator, KeyboardAvoidingView,
   Platform, ScrollView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { loginApi } from '../../src/api/auth.api';
+import { useAuthStore, parseJwtPayload } from '../../src/store/auth.store';
+import { authStorage } from '../../src/api/client';
 import { useSignIn, useOAuth } from '@clerk/expo';
 import * as Linking from 'expo-linking';
 
@@ -33,6 +36,14 @@ export default function LoginScreen(): React.ReactElement {
   const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    if (authStorage.getString('session-expired')) {
+      authStorage.delete('session-expired');
+      Alert.alert('Session Expired', 'Your session has expired. Please sign in again.');
+    }
+  }, []);
+
+  const handleLogin = async (): Promise<void> => {
   const switchTab = (method: AuthMethod) => {
     setAuthMethod(method);
     setOtpStage('send');

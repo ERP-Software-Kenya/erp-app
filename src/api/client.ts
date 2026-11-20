@@ -36,6 +36,11 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
 
 apiClient.interceptors.response.use(
   (response) => response,
+  (error: AxiosError) => {
+    if (error.response?.status === 401) {
+      authStorage.delete('jwt');
+      authStorage.set('session-expired', '1');
+      router.replace('/(auth)/login');
   async (error: AxiosError) => {
     const config = error.config as RetriableConfig | undefined;
     if (error.response?.status === 401 && config && !config._authRetried && getToken) {
