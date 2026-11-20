@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,9 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import { loginApi } from '../../src/api/auth.api';
+import { useAuthStore, parseJwtPayload } from '../../src/store/auth.store';
+import { authStorage } from '../../src/api/client';
 import * as Linking from 'expo-linking';
 import { useHostedAuth } from '@clerk/expo/hosted-auth';
 
@@ -15,6 +18,13 @@ export default function LoginScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
   const { startHostedAuth } = useHostedAuth();
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (authStorage.getString('session-expired')) {
+      authStorage.delete('session-expired');
+      Alert.alert('Session Expired', 'Your session has expired. Please sign in again.');
+    }
+  }, []);
 
   const handleLogin = async (): Promise<void> => {
     setLoading(true);
