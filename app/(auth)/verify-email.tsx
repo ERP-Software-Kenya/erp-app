@@ -14,7 +14,7 @@ function clerkMsg(error: unknown, fallback: string): string {
 
 export default function VerifyEmailScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signUp, fetchStatus } = useSignUp();
+  const { signUp, setActive, fetchStatus } = useSignUp();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -40,8 +40,8 @@ export default function VerifyEmailScreen(): React.ReactElement {
         return;
       }
       if (signUp.status === 'complete') {
-        console.log('[VerifyEmail] complete, finalizing');
-        await signUp.finalize();
+        console.log('[VerifyEmail] complete, session=', signUp.createdSessionId);
+        await setActive({ session: signUp.createdSessionId });
         router.replace('/');
       } else {
         console.log('[VerifyEmail] unexpected status=', signUp.status);
