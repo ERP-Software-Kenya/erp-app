@@ -1,6 +1,7 @@
 import '../global.css';
+import 'expo-dev-client';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useSegments } from 'expo-router';
 import { ClerkProvider, useAuth, useClerk } from '@clerk/expo';
 import { tokenCache } from '@clerk/expo/token-cache';
 import NetInfo from '@react-native-community/netinfo';
@@ -9,6 +10,9 @@ import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { ActivityIndicator, AppState, Text, TouchableOpacity, View, type AppStateStatus } from 'react-native';
+import * as Application from 'expo-application';
+import { getLatestRelease, type ReleaseMetadata } from '../src/api/releases.api';
+import { UpdateRequired } from '../src/components/UpdateRequired';
 import { buildMmkvPersister } from '../src/utils/mmkv-persister';
 import { useAuthStore } from '../src/store/auth.store';
 import {
@@ -21,6 +25,7 @@ import { configureApiAuth } from '../src/api/client';
 import { getDeviceSession } from '../src/auth/device-session';
 import { useQueueStore } from '../src/store/queue.store';
 import { clearActiveTripId } from '../src/store/active-trip';
+import { getPendingInvitationToken } from '../src/auth/pending-invitation';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -43,12 +48,16 @@ Notifications.setNotificationHandler({
 });
 
 function RootNavigator(): React.ReactElement {
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const segments = useSegments();
+  const isInviteRoute = (segments as readonly string[]).includes('invite');
+  const { isLoaded, isSignedIn, userId: clerkUserId, getToken } = useAuth();
   const { signOut } = useClerk();
   const { isReady, role, setProfile, markReady, clearAuth } = useAuthStore();
   const { loadFromStorage, flush, clear: clearQueue } = useQueueStore();
   const appState = useRef(AppState.currentState);
+  const lastClerkUserId = useRef<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [latestRelease, setLatestRelease] = useState<ReleaseMetadata | null>(null);
 
   const bootstrap = useCallback(async (): Promise<void> => {
     if (!isSignedIn) {
@@ -57,19 +66,44 @@ function RootNavigator(): React.ReactElement {
       clearQueue();
       clearActiveTripId();
       clearAuth();
+      lastClerkUserId.current = null;
       return;
     }
+    // If a different Clerk user signed in (session swap without sign-out), clear stale cache
+    if (clerkUserId && lastClerkUserId.current && lastClerkUserId.current !== clerkUserId) {
+      queryClient.clear();
+      await persister.removeClient();
+    }
+    lastClerkUserId.current = clerkUserId ?? null;
     setBootstrapError(null);
     await syncUserApi();
     const profile = await getMeApi();
-    if (!profile.roles.some((role) => role === 'packer' || role === 'driver')) {
-      throw new Error('This account is not assigned as a packer or driver.');
+    if (!profile.roles.some(r => ['packer','driver','org-admin','branch-manager','super-admin'].includes(r))) {
+      // Clear stale cache — user has no org/role so any persisted data belongs to a prior session
+      queryClient.clear();
+      await persister.removeClient();
+      markReady(); router.replace('/(auth)/pending-role'); return;
     }
     setProfile(profile);
     await upsertDeviceSessionApi(await getDeviceSession());
     await registerExpoToken();
     await flush();
-  }, [isSignedIn, clearAuth, clearQueue, setProfile, flush]);
+  }, [isSignedIn, clerkUserId, clearAuth, clearQueue, setProfile, flush]);
+
+  useEffect(() => {
+    void (async (): Promise<void> => {
+      try {
+        const latest = await getLatestRelease();
+        const running = Application.nativeBuildVersion;
+        if (!running) return;
+        if (parseInt(latest.buildNumber, 10) > parseInt(running, 10)) {
+          setLatestRelease(latest);
+        }
+      } catch {
+        // Network error or no release published — don't block the user
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     loadFromStorage();
@@ -88,12 +122,24 @@ function RootNavigator(): React.ReactElement {
   }), [getToken, clearAuth, signOut]);
 
   useEffect(() => {
+    if (!isLoaded || isInviteRoute) return;
+    void getPendingInvitationToken().then((token) => {
+      if (token) router.replace(`/(auth)/invite/${encodeURIComponent(token)}` as never);
+    });
+  }, [isLoaded, isInviteRoute]);
+
+  useEffect(() => {
     if (!isLoaded) return;
+    if (isInviteRoute) {
+      markReady();
+      return;
+    }
     void bootstrap().catch((error: unknown) => {
       markReady();
       setBootstrapError(error instanceof Error ? error.message : 'Unable to load your account.');
+      router.replace('/(auth)/pending-role');
     });
-  }, [isLoaded, bootstrap, markReady]);
+  }, [isLoaded, isInviteRoute, bootstrap, markReady]);
 
   useEffect(() => {
     if (!isSignedIn) return;
@@ -120,6 +166,7 @@ function RootNavigator(): React.ReactElement {
 
   useEffect(() => {
     if (!isLoaded || !isReady || bootstrapError) return;
+    if (isInviteRoute) return;
     if (!isSignedIn) {
       router.replace('/(auth)/login');
       return;
@@ -128,25 +175,23 @@ function RootNavigator(): React.ReactElement {
       router.replace('/(picker)');
     } else if (role === 'driver') {
       router.replace('/(driver)');
+    } else if (role === 'org-admin') {
+      router.replace('/(org-admin)');
+    } else if (role === 'branch-manager') {
+      router.replace('/(branch-manager)');
+    } else if (role === 'super-admin') {
+      router.replace('/(super-admin)');
     } else {
-      router.replace('/(auth)/login');
+      router.replace('/(auth)/pending-role');
     }
-  }, [isLoaded, isReady, isSignedIn, role, bootstrapError]);
+  }, [isLoaded, isReady, isSignedIn, role, bootstrapError, isInviteRoute]);
+
+  if (latestRelease !== null) {
+    return <UpdateRequired latest={latestRelease} />;
+  }
 
   if (!isLoaded || !isReady) {
     return <View className="flex-1 items-center justify-center"><ActivityIndicator size="large" /></View>;
-  }
-
-  if (isSignedIn && bootstrapError) {
-    return (
-      <View className="flex-1 items-center justify-center px-8 bg-surface">
-        <Text className="text-text font-bold text-xl mb-2">Account unavailable</Text>
-        <Text className="text-muted text-center mb-6">{bootstrapError}</Text>
-        <TouchableOpacity className="bg-primary px-6 py-3 rounded-xl" onPress={() => void bootstrap()}>
-          <Text className="text-white font-bold">Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
   }
 
   return (
@@ -155,6 +200,9 @@ function RootNavigator(): React.ReactElement {
       <Stack.Screen name="(picker)" />
       <Stack.Screen name="(driver)" />
       <Stack.Screen name="(shared)" />
+      <Stack.Screen name="(org-admin)" />
+      <Stack.Screen name="(branch-manager)" />
+      <Stack.Screen name="(super-admin)" />
     </Stack>
   );
 }

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type UserRole = 'packer' | 'driver';
+export type UserRole = 'packer' | 'driver' | 'org-admin' | 'branch-manager' | 'super-admin';
 
 export interface AuthProfile {
   id: string;
@@ -20,6 +20,7 @@ export interface AuthState {
   role: UserRole | null;
   locationIds: string[];
   organizationId: string | null;
+  branchId: string | null;
   setProfile: (profile: AuthProfile) => void;
   markReady: () => void;
   clearAuth: () => void;
@@ -35,6 +36,9 @@ export function parseJwtPayload(token: string): JwtPayload | null {
     return null;
   }
 function fieldRole(roles: string[]): UserRole | null {
+  if (roles.includes('super-admin')) return 'super-admin';
+  if (roles.includes('org-admin')) return 'org-admin';
+  if (roles.includes('branch-manager')) return 'branch-manager';
   if (roles.includes('packer')) return 'packer';
   if (roles.includes('driver')) return 'driver';
   return null;
@@ -50,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
   role: null,
   locationIds: [],
   organizationId: null,
+  branchId: null,
 
   setProfile: (profile: AuthProfile): void => {
     set({
@@ -58,6 +63,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       role: fieldRole(profile.roles),
       locationIds: profile.locationIds,
       organizationId: profile.organization?.id ?? null,
+      branchId: profile.branchId ?? null,
     });
   },
 
@@ -70,6 +76,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       role: null,
       locationIds: [],
       organizationId: null,
+      branchId: null,
     });
   },
 
