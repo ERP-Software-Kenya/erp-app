@@ -9,7 +9,7 @@ import { useSignUp, useOAuth } from '@clerk/expo';
 import * as Linking from 'expo-linking';
 
 type AuthMethod = 'password' | 'otp';
-type OtpStage = 'send' | 'verify';
+type OtpStage = 'send' | 'verify' | 'set-password';
 
 function clerkMsg(error: unknown, fallback: string): string {
   const e = error as { errors?: { code?: string; message?: string; longMessage?: string }[] };
@@ -25,7 +25,7 @@ function clerkCode(error: unknown): string {
 
 export default function SignUpScreen(): React.ReactElement {
   const insets = useSafeAreaInsets();
-  const { signUp, fetchStatus } = useSignUp();
+  const { signUp, setActive, fetchStatus } = useSignUp();
   const { startOAuthFlow } = useOAuth({ strategy: 'oauth_google' });
 
   const [authMethod, setAuthMethod] = useState<AuthMethod>('password');
@@ -33,12 +33,14 @@ export default function SignUpScreen(): React.ReactElement {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otpCode, setOtpCode] = useState('');
+  const [otpPassword, setOtpPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
   const switchTab = (method: AuthMethod) => {
     setAuthMethod(method);
     setOtpStage('send');
     setOtpCode('');
+    setOtpPassword('');
   };
 
   const handlePasswordSignUp = async () => {
@@ -131,18 +133,18 @@ export default function SignUpScreen(): React.ReactElement {
         return;
       }
       if (signUp.status === 'complete') {
-        console.log('[SignUp/otp] complete, finalizing');
-        await signUp.finalize();
+        console.log('[SignUp/otp] complete, session=', signUp.createdSessionId);
+        await setActive({ session: signUp.createdSessionId });
         router.replace('/');
       } else if (signUp.status === 'missing_requirements') {
-        // Instance requires a password — OTP-only sign-up is not supported
-        const missing = signUp.missingFields?.join(', ') ?? 'a password';
         console.log('[SignUp/otp] missing_requirements, missingFields=', signUp.missingFields);
-        Alert.alert(
-          'Password required',
-          `This account requires ${missing} to complete sign-up. Please use the Password tab instead.`,
-          [{ text: 'Use Password', onPress: () => switchTab('password') }],
-        );
+        const missing = signUp.missingFields ?? [];
+        if (missing.includes('password')) {
+          // Email verified but instance requires a password — collect it inline
+          setOtpStage('set-password');
+        } else {
+          Alert.alert('Sign up incomplete', `Status: ${signUp.status}. Missing: ${missing.join(', ')}`);
+        }
       } else {
         console.log('[SignUp/otp] unexpected status=', signUp.status);
         Alert.alert('Sign up incomplete', `Status: ${signUp.status}. Please contact support.`);
@@ -150,6 +152,33 @@ export default function SignUpScreen(): React.ReactElement {
     } catch (err) {
       console.log('[SignUp/otp] caught=', err);
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSetOtpPassword = async () => {
+    if (fetchStatus !== 'idle') return;
+    setLoading(true);
+    try {
+      const prefix = email.split('@')[0];
+      const missing = signUp.missingFields ?? [];
+      const updates: Record<string, string> = { password: otpPassword };
+      if (missing.includes('first_name')) updates.firstName = prefix;
+      if (missing.includes('last_name')) updates.lastName = 'User';
+      if (missing.includes('username')) updates.username = prefix;
+      console.log('[SignUp/otp] update() missing=', missing, 'autoFillKeys=', Object.keys(updates));
+      await signUp.update(updates);
+      console.log('[SignUp/otp] update() done, signUp.status=', signUp.status);
+      if (signUp.status === 'complete') {
+        await setActive({ session: signUp.createdSessionId });
+        router.replace('/');
+      } else {
+        Alert.alert('Sign up incomplete', `Status: ${signUp.status ?? 'unknown'}. Please contact support.`);
+      }
+    } catch (err) {
+      console.log('[SignUp/otp] setPassword caught=', err);
+      Alert.alert('Sign up failed', clerkMsg(err, 'Could not set password. Please try again.'));
     } finally {
       setLoading(false);
     }
@@ -248,20 +277,22 @@ export default function SignUpScreen(): React.ReactElement {
           {/* OTP sign-up */}
           {authMethod === 'otp' && (
             <View style={{ gap: 12 }}>
-              <View>
-                <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>EMAIL</Text>
-                <TextInput
-                  value={email}
-                  onChangeText={setEmail}
-                  placeholder="you@company.com"
-                  placeholderTextColor="#475569"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoComplete="email"
-                  editable={otpStage === 'send'}
-                  style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', color: otpStage === 'verify' ? '#64748b' : '#ffffff', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 }}
-                />
-              </View>
+              {otpStage !== 'set-password' && (
+                <View>
+                  <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>EMAIL</Text>
+                  <TextInput
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="you@company.com"
+                    placeholderTextColor="#475569"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoComplete="email"
+                    editable={otpStage === 'send'}
+                    style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)', color: otpStage === 'verify' ? '#64748b' : '#ffffff', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 }}
+                  />
+                </View>
+              )}
               {otpStage === 'verify' && (
                 <View>
                   <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>VERIFICATION CODE</Text>
@@ -278,7 +309,7 @@ export default function SignUpScreen(): React.ReactElement {
                   <Text style={{ color: '#64748b', fontSize: 11, marginTop: 6 }}>Code sent to {email}</Text>
                 </View>
               )}
-              {otpStage === 'send' ? (
+              {otpStage === 'send' && (
                 <TouchableOpacity
                   onPress={() => void handleOtpSignUp()}
                   disabled={loading || !email.trim()}
@@ -286,7 +317,8 @@ export default function SignUpScreen(): React.ReactElement {
                 >
                   {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }}>Send code</Text>}
                 </TouchableOpacity>
-              ) : (
+              )}
+              {otpStage === 'verify' && (
                 <View style={{ gap: 8 }}>
                   <TouchableOpacity
                     onPress={() => void handleVerifyOtpSignUp()}
@@ -297,6 +329,32 @@ export default function SignUpScreen(): React.ReactElement {
                   </TouchableOpacity>
                   <TouchableOpacity onPress={() => { setOtpStage('send'); setOtpCode(''); }} style={{ paddingVertical: 10, alignItems: 'center' }}>
                     <Text style={{ color: '#94a3b8', fontSize: 13 }}>← Back</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+              {otpStage === 'set-password' && (
+                <View style={{ gap: 12 }}>
+                  <Text style={{ color: '#94a3b8', fontSize: 12, textAlign: 'center' }}>
+                    Email verified! Set a password to complete your account.
+                  </Text>
+                  <View>
+                    <Text style={{ color: '#cbd5e1', fontSize: 12, fontWeight: '600', marginBottom: 6 }}>PASSWORD</Text>
+                    <TextInput
+                      value={otpPassword}
+                      onChangeText={setOtpPassword}
+                      placeholder="min. 8 characters"
+                      placeholderTextColor="#475569"
+                      secureTextEntry
+                      autoComplete="new-password"
+                      style={{ backgroundColor: 'rgba(0,0,0,0.3)', borderRadius: 10, borderWidth: 1, borderColor: '#09b6e8', color: '#ffffff', paddingHorizontal: 14, paddingVertical: 12, fontSize: 15 }}
+                    />
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => void handleSetOtpPassword()}
+                    disabled={loading || otpPassword.length < 8}
+                    style={{ backgroundColor: loading || otpPassword.length < 8 ? '#1e40af' : '#3b74f5', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
+                  >
+                    {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }}>Complete Sign Up</Text>}
                   </TouchableOpacity>
                 </View>
               )}
