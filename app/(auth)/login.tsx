@@ -43,30 +43,60 @@ export default function LoginScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[Login] password() start, email=', email.trim());
       const { error } = await signIn.password({ identifier: email.trim(), password });
+      console.log('[Login] password() done, status=', signIn.status, 'error=', JSON.stringify(error));
       if (error) {
         Alert.alert('Sign in failed', clerkMsg(error, 'Please check your credentials.'));
         return;
       }
 
       if (signIn.status === 'complete') {
+        console.log('[Login] status=complete, finalizing');
         await signIn.finalize();
         router.replace('/');
         return;
       }
 
       if (signIn.status === 'needs_second_factor' || signIn.status === 'needs_client_trust') {
+        console.log('[Login] status=', signIn.status, ', calling sendEmailCode()');
         const { error: mfaError } = await signIn.mfa.sendEmailCode();
+        console.log('[Login] sendEmailCode() done, status=', signIn.status, 'mfaError=', JSON.stringify(mfaError));
         if (mfaError) {
+          if (signIn.status === 'complete') {
+            console.log('[Login] status=complete after sendEmailCode error, finalizing');
+            await signIn.finalize();
+            router.replace('/');
+            return;
+          }
+          const errCode = (mfaError as { errors?: { code?: string }[] })?.errors?.[0]?.code ?? '';
+          console.log('[Login] mfaError code=', errCode);
+          // "already verified" — second factor was already verified in a prior attempt
+          if (errCode.includes('already') || errCode.includes('verified')) {
+            console.log('[Login] "already verified" — trying finalize()');
+            try {
+              await signIn.finalize();
+              console.log('[Login] finalize() succeeded');
+              router.replace('/');
+            } catch (finalizeErr) {
+              console.log('[Login] finalize() failed=', finalizeErr, '— sending fresh code');
+              const { error: resendErr } = await signIn.mfa.sendEmailCode().catch(e => ({ error: e }));
+              console.log('[Login] resend result=', JSON.stringify(resendErr));
+              router.push('/(auth)/verify-second-factor');
+            }
+            return;
+          }
           Alert.alert('Sign in failed', clerkMsg(mfaError, 'Could not send verification code.'));
           return;
         }
+        console.log('[Login] sendEmailCode() OK, navigating to verify-second-factor');
         router.push('/(auth)/verify-second-factor');
         return;
       }
 
       Alert.alert('Sign in failed', `Unexpected status: ${signIn.status}`);
     } catch (err) {
+      console.log('[Login] caught error=', err);
       Alert.alert('Sign in failed', clerkMsg(err, 'Please check your credentials.'));
     } finally {
       setLoading(false);

@@ -23,18 +23,32 @@ export default function VerifyEmailScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[VerifyEmail] verifyEmailCode() start, signUp.status=', signUp.status);
       const { error } = await signUp.verifications.verifyEmailCode({ code: code.trim() });
+      console.log('[VerifyEmail] verifyEmailCode() done, signUp.status=', signUp.status, 'error=', JSON.stringify(error));
       if (error) {
+        const errCode = (error as { errors?: { code?: string }[] })?.errors?.[0]?.code ?? '';
+        console.log('[VerifyEmail] error code=', errCode);
+        // Email already verified — account exists, redirect to sign-in
+        if (errCode.includes('already') || errCode.includes('verified')) {
+          Alert.alert('Already verified', 'Your email is already verified. Please sign in instead.', [
+            { text: 'Sign In', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
         Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
         return;
       }
       if (signUp.status === 'complete') {
+        console.log('[VerifyEmail] complete, finalizing');
         await signUp.finalize();
         router.replace('/');
       } else {
+        console.log('[VerifyEmail] unexpected status=', signUp.status);
         Alert.alert('Not done', 'Additional steps are required. Please contact your administrator.');
       }
     } catch (err) {
+      console.log('[VerifyEmail] caught error=', err);
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));
     } finally {
       setLoading(false);
@@ -45,13 +59,23 @@ export default function VerifyEmailScreen(): React.ReactElement {
     if (fetchStatus !== 'idle') return;
     setResending(true);
     try {
+      console.log('[VerifyEmail] resend sendEmailCode() start');
       const { error } = await signUp.verifications.sendEmailCode();
+      console.log('[VerifyEmail] resend done, error=', JSON.stringify(error));
       if (error) {
+        const errCode = (error as { errors?: { code?: string }[] })?.errors?.[0]?.code ?? '';
+        if (errCode.includes('already') || errCode.includes('verified')) {
+          Alert.alert('Already verified', 'Your email is already verified. Please sign in instead.', [
+            { text: 'Sign In', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
         Alert.alert('Error', clerkMsg(error, 'Could not resend code.'));
         return;
       }
       Alert.alert('Code sent', 'A new verification code has been sent to your email.');
     } catch (err) {
+      console.log('[VerifyEmail] resend caught error=', err);
       Alert.alert('Error', clerkMsg(err, 'Could not resend code.'));
     } finally {
       setResending(false);

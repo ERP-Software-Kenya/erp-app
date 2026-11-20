@@ -1,4 +1,5 @@
 import '../global.css';
+import 'expo-dev-client';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Stack, router, useSegments } from 'expo-router';
 import { ClerkProvider, useAuth, useClerk } from '@clerk/expo';
@@ -49,11 +50,12 @@ Notifications.setNotificationHandler({
 function RootNavigator(): React.ReactElement {
   const segments = useSegments();
   const isInviteRoute = (segments as readonly string[]).includes('invite');
-  const { isLoaded, isSignedIn, getToken } = useAuth();
+  const { isLoaded, isSignedIn, userId: clerkUserId, getToken } = useAuth();
   const { signOut } = useClerk();
   const { isReady, role, setProfile, markReady, clearAuth } = useAuthStore();
   const { loadFromStorage, flush, clear: clearQueue } = useQueueStore();
   const appState = useRef(AppState.currentState);
+  const lastClerkUserId = useRef<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [latestRelease, setLatestRelease] = useState<ReleaseMetadata | null>(null);
 
@@ -64,19 +66,29 @@ function RootNavigator(): React.ReactElement {
       clearQueue();
       clearActiveTripId();
       clearAuth();
+      lastClerkUserId.current = null;
       return;
     }
+    // If a different Clerk user signed in (session swap without sign-out), clear stale cache
+    if (clerkUserId && lastClerkUserId.current && lastClerkUserId.current !== clerkUserId) {
+      queryClient.clear();
+      await persister.removeClient();
+    }
+    lastClerkUserId.current = clerkUserId ?? null;
     setBootstrapError(null);
     await syncUserApi();
     const profile = await getMeApi();
     if (!profile.roles.some(r => ['packer','driver','org-admin','branch-manager','super-admin'].includes(r))) {
+      // Clear stale cache — user has no org/role so any persisted data belongs to a prior session
+      queryClient.clear();
+      await persister.removeClient();
       markReady(); router.replace('/(auth)/pending-role'); return;
     }
     setProfile(profile);
     await upsertDeviceSessionApi(await getDeviceSession());
     await registerExpoToken();
     await flush();
-  }, [isSignedIn, clearAuth, clearQueue, setProfile, flush]);
+  }, [isSignedIn, clerkUserId, clearAuth, clearQueue, setProfile, flush]);
 
   useEffect(() => {
     void (async (): Promise<void> => {

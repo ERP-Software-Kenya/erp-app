@@ -17,26 +17,61 @@ export default function VerifySecondFactorScreen(): React.ReactElement {
   const { signIn, fetchStatus } = useSignIn();
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const handleVerify = async () => {
     if (fetchStatus !== 'idle') return;
     setLoading(true);
     try {
+      console.log('[2FA] verifyEmailCode() start, code length=', code.trim().length, 'signIn.status=', signIn.status);
       const { error } = await signIn.mfa.verifyEmailCode({ code: code.trim() });
+      console.log('[2FA] verifyEmailCode() done, status=', signIn.status, 'error=', JSON.stringify(error));
       if (error) {
-        Alert.alert('Verification failed', clerkMsg(error, 'Invalid or expired code.'));
+        const msg = clerkMsg(error, 'Invalid or expired code.');
+        console.log('[2FA] verify error msg=', msg);
+        // Session expired / invalid — force a clean re-login
+        if (msg.toLowerCase().includes('signup') || msg.toLowerCase().includes('complete')) {
+          Alert.alert('Session expired', 'Please sign in again.', [
+            { text: 'OK', onPress: () => router.replace('/(auth)/login') },
+          ]);
+          return;
+        }
+        Alert.alert('Verification failed', msg);
         return;
       }
       if (signIn.status === 'complete') {
+        console.log('[2FA] status=complete, finalizing');
         await signIn.finalize();
         router.replace('/');
       } else {
+        console.log('[2FA] unexpected status=', signIn.status);
         Alert.alert('Verification failed', `Unexpected status: ${signIn.status}`);
       }
     } catch (err) {
+      console.log('[2FA] caught error=', err);
       Alert.alert('Verification failed', clerkMsg(err, 'Invalid or expired code.'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (fetchStatus !== 'idle') return;
+    setResending(true);
+    try {
+      console.log('[2FA] resend sendEmailCode() start, signIn.status=', signIn.status);
+      const { error } = await signIn.mfa.sendEmailCode();
+      console.log('[2FA] resend done, error=', JSON.stringify(error));
+      if (error) {
+        Alert.alert('Error', clerkMsg(error, 'Could not resend code.'));
+        return;
+      }
+      Alert.alert('Code sent', 'A new verification code has been sent to your email.');
+    } catch (err) {
+      console.log('[2FA] resend caught error=', err);
+      Alert.alert('Error', clerkMsg(err, 'Could not resend code.'));
+    } finally {
+      setResending(false);
     }
   };
 
@@ -78,6 +113,17 @@ export default function VerifySecondFactorScreen(): React.ReactElement {
             style={{ backgroundColor: loading || code.length < 6 ? '#1e40af' : '#3b74f5', borderRadius: 12, paddingVertical: 14, alignItems: 'center' }}
           >
             {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={{ color: '#ffffff', fontWeight: '700', fontSize: 15 }}>Verify</Text>}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={() => void handleResend()}
+            disabled={resending}
+            style={{ paddingVertical: 10, alignItems: 'center' }}
+          >
+            <Text style={{ color: '#94a3b8', fontSize: 13 }}>
+              {resending ? 'Sending…' : "Didn't receive it? "}
+              {!resending && <Text style={{ color: '#09b6e8', fontWeight: '700' }}>Resend code</Text>}
+            </Text>
           </TouchableOpacity>
 
           <TouchableOpacity onPress={() => router.replace('/(auth)/login')} style={{ paddingVertical: 6, alignItems: 'center' }}>
